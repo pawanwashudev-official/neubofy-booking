@@ -231,8 +231,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						},
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: 'booking@updates.neubofy.in',
-							replyTo: 'meet@neubofy.in'
+							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
+							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
 						},
 						template?.subject || undefined
 					);
@@ -263,7 +263,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						originalBooking.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: 'booking@updates.neubofy.in'
+							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
 						}
 					);
 				} catch (adminEmailErr) {

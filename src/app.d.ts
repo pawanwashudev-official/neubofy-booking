@@ -15,6 +15,7 @@ declare global {
 				ADMIN_EMAIL?: string;
 				RESEND_API_KEY?: string;
 				EMAIL_FROM?: string;
+				EMAIL_REPLY_TO?: string;
 				TURNSTILE_SECRET_KEY?: string;
 				CRON_SECRET?: string;
 			};
