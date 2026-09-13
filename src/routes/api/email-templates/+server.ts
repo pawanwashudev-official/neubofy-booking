@@ -4,7 +4,7 @@
  */
 
 import { json, error, type RequestEvent } from '@sveltejs/kit';
-import { getCurrentUser } from '$lib/server/auth';
+import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
 
 export interface EmailTemplate {
 	id: string;
@@ -49,10 +49,11 @@ const DEFAULT_TEMPLATES = [
 ];
 
 export const GET = async (event: RequestEvent) => {
-	const userId = await getCurrentUser(event);
-	if (!userId) {
+	const auth = await getAuthContext(event);
+	if (!auth) {
 		throw error(401, 'Unauthorized');
 	}
+	if (!isOrganizationAdmin(auth.role)) throw error(403, 'Organization administrator access required');
 
 	const env = event.platform?.env;
 	if (!env) {
@@ -62,10 +63,10 @@ export const GET = async (event: RequestEvent) => {
 	const db = env.DB;
 
 	try {
-		// Get user's email templates
+		// Email templates belong to the organization, not the signed-in member.
 		const templates = await db
-			.prepare('SELECT id, template_type, is_enabled, subject, custom_message FROM email_templates WHERE user_id = ?')
-			.bind(userId)
+			.prepare('SELECT id, template_type, is_enabled, subject, custom_message FROM email_templates WHERE organization_id = ?')
+			.bind(auth.organizationId)
 			.all<EmailTemplate>();
 
 		// Merge with defaults (templates that don't exist in DB yet)
@@ -90,10 +91,11 @@ export const GET = async (event: RequestEvent) => {
 };
 
 export const PUT = async (event: RequestEvent) => {
-	const userId = await getCurrentUser(event);
-	if (!userId) {
+	const auth = await getAuthContext(event);
+	if (!auth) {
 		throw error(401, 'Unauthorized');
 	}
+	if (!isOrganizationAdmin(auth.role)) throw error(403, 'Organization administrator access required');
 
 	const env = event.platform?.env;
 	if (!env) {
@@ -117,16 +119,18 @@ export const PUT = async (event: RequestEvent) => {
 			throw error(400, 'Invalid template type');
 		}
 
-		// Upsert template
-		await db
-			.prepare(`
-				INSERT INTO email_templates (user_id, template_type, is_enabled, subject, custom_message, updated_at)
-				VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-				ON CONFLICT(user_id, template_type)
-				DO UPDATE SET is_enabled = excluded.is_enabled, subject = excluded.subject, custom_message = excluded.custom_message, updated_at = CURRENT_TIMESTAMP
-			`)
-			.bind(userId, template_type, is_enabled ? 1 : 0, subject || null, custom_message || null)
-			.run();
+		const existing = await db.prepare('SELECT id FROM email_templates WHERE organization_id = ? AND template_type = ? LIMIT 1')
+			.bind(auth.organizationId, template_type).first<{ id: string }>();
+		if (existing) {
+			await db.prepare(
+				`UPDATE email_templates SET is_enabled = ?, subject = ?, custom_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+			).bind(is_enabled ? 1 : 0, subject || null, custom_message || null, existing.id).run();
+		} else {
+			await db.prepare(
+				`INSERT INTO email_templates (user_id, organization_id, template_type, is_enabled, subject, custom_message, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+			).bind(auth.userId, auth.organizationId, template_type, is_enabled ? 1 : 0, subject || null, custom_message || null).run();
+		}
 
 		return json({ success: true });
 	} catch (err: any) {

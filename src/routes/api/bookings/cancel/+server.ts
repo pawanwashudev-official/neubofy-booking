@@ -7,7 +7,7 @@ import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getCurrentUser } from '$lib/server/auth';
 import { cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
 import { cancelOutlookCalendarEvent, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
-import { sendCancellationEmail, getEmailTemplates, isEmailEnabled } from '$lib/server/email';
+import { sendCancellationEmail, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
 
 export const POST = async (event: RequestEvent) => {
 	const env = event.platform?.env;
@@ -137,6 +137,7 @@ export const POST = async (event: RequestEvent) => {
 
 				const replyToEmail = booking.contact_email || booking.host_email;
 				const templates = await getEmailTemplates(db, booking.user_id);
+				const emailConfig = await getOrganizationEmailConfig(db, booking.user_id, env);
 
 				if (isEmailEnabled(templates, 'cancellation')) {
 					const template = templates.get('cancellation');
@@ -161,8 +162,8 @@ export const POST = async (event: RequestEvent) => {
 						},
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
-							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+							from: emailConfig.from,
+							replyTo: emailConfig.replyTo
 						},
 						template?.subject || undefined
 					);

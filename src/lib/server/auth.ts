@@ -30,16 +30,18 @@ export interface GoogleUserInfo {
 /**
  * Generate OAuth authorization URL
  */
-export function getAuthUrl(clientId: string, redirectUri: string, state: string): string {
+export function getAuthUrl(clientId: string, redirectUri: string, state: string, includeCalendar = false): string {
 	const params = new URLSearchParams({
 		client_id: clientId,
 		redirect_uri: redirectUri,
 		response_type: 'code',
 		scope: [
-			'https://www.googleapis.com/auth/calendar',
-			'https://www.googleapis.com/auth/calendar.events',
 			'https://www.googleapis.com/auth/userinfo.email',
-			'https://www.googleapis.com/auth/userinfo.profile'
+			'https://www.googleapis.com/auth/userinfo.profile',
+			...(includeCalendar ? [
+				'https://www.googleapis.com/auth/calendar',
+				'https://www.googleapis.com/auth/calendar.events'
+			] : [])
 		].join(' '),
 		access_type: 'offline',
 		prompt: 'consent',

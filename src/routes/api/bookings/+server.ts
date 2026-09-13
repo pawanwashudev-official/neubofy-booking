@@ -7,7 +7,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
 import { createOutlookCalendarEvent, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
-import { sendBookingEmail, sendAdminNotificationEmail, getEmailTemplates, isEmailEnabled, type EmailTemplateType } from '$lib/server/email';
+import { sendBookingEmail, sendAdminNotificationEmail, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled, type EmailTemplateType } from '$lib/server/email';
 import { isValidEmail, validateLength, validateFields, MAX_LENGTHS } from '$lib/server/validation';
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -260,6 +260,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 				// Get email templates to check if confirmation is enabled
 				const templates = await getEmailTemplates(db, user.id);
+				const emailConfig = await getOrganizationEmailConfig(db, user.id, env);
 				const confirmationEnabled = isEmailEnabled(templates, 'confirmation');
 
 				const emailData = {
@@ -291,8 +292,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						},
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
-							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+							from: emailConfig.from,
+							replyTo: emailConfig.replyTo
 						},
 						template?.subject || undefined
 					);
@@ -304,7 +305,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					user.contact_email || user.email,
 					{
 						apiKey: env.RESEND_API_KEY,
-						from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
+						from: emailConfig.from
 					}
 				);
 

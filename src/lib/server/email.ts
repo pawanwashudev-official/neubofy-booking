@@ -34,5 +34,6 @@ export {
 	sendAdminRescheduleNotification,
 	// Database functions
 	getEmailTemplates,
-	isEmailEnabled
+	isEmailEnabled,
+	getOrganizationEmailConfig
 } from './email/index';

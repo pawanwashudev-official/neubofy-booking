@@ -6,7 +6,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createCalendarEvent, cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { sendRescheduleEmail, sendAdminRescheduleNotification, getEmailTemplates, isEmailEnabled } from '$lib/server/email';
+import { sendRescheduleEmail, sendAdminRescheduleNotification, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const env = platform?.env;
@@ -204,6 +204,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 				const replyToEmail = originalBooking.contact_email || originalBooking.host_email;
 				const templates = await getEmailTemplates(db, originalBooking.user_id);
+				const emailConfig = await getOrganizationEmailConfig(db, originalBooking.user_id, env);
 
 				// Check if reschedule email template is enabled (default to true)
 				if (isEmailEnabled(templates, 'reschedule')) {
@@ -231,8 +232,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						},
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
-							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+							from: emailConfig.from,
+							replyTo: emailConfig.replyTo
 						},
 						template?.subject || undefined
 					);
@@ -263,7 +264,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						originalBooking.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
+							from: emailConfig.from
 						}
 					);
 				} catch (adminEmailErr) {

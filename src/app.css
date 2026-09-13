@@ -3,9 +3,64 @@
 @tailwind utilities;
 
 @layer base {
+	*, *::before, *::after {
+		box-sizing: border-box;
+	}
+
+	html {
+		-webkit-text-size-adjust: 100%;
+		text-rendering: optimizeLegibility;
+	}
+
+	body {
+		margin: 0;
+		min-width: 320px;
+		overflow-x: hidden;
+		background: #f8fafc;
+		color: #0f172a;
+	}
+
+	button, input, select, textarea {
+		font: inherit;
+	}
+
+	button, a {
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	:focus-visible {
+		outline: 3px solid rgba(37, 99, 235, 0.35);
+		outline-offset: 2px;
+	}
+
 	:root {
 		--color-primary: theme('colors.blue.600');
 		--color-primary-hover: theme('colors.blue.700');
+	}
+}
+
+@layer components {
+	.portal-shell {
+		width: min(100% - 2rem, 80rem);
+		margin-inline: auto;
+	}
+
+	@media (max-width: 640px) {
+		.portal-shell {
+			width: min(100% - 1.25rem, 80rem);
+		}
+
+		.portal-actions {
+			width: 100%;
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.5rem;
+		}
+
+		.portal-actions > * {
+			min-width: 0;
+			text-align: center;
+		}
 	}
 }
 

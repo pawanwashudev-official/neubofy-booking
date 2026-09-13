@@ -31,6 +31,10 @@ export const onRequest: PagesFunction = async (context) => {
 		// Long cache for static assets
 		headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 		headers.set('CDN-Cache-Control', 'max-age=31536000');
+	} else if (request.method === 'GET' && !path.startsWith('/dashboard') && !path.startsWith('/auth') && !path.startsWith('/api') && !path.startsWith('/cancel') && !path.startsWith('/reschedule')) {
+		// Public organization and booking pages contain no authenticated data.
+		headers.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+		headers.set('CDN-Cache-Control', 'max-age=300');
 	}
 
 	return new Response(response.body, {

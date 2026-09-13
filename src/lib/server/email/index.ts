@@ -48,6 +48,22 @@ interface EmailConfig {
 	replyTo?: string;
 }
 
+export async function getOrganizationEmailConfig(
+	db: D1Database,
+	userId: string,
+	env: { EMAIL_FROM?: string; EMAIL_REPLY_TO?: string }
+): Promise<{ from: string; replyTo: string }> {
+	const organization = await db.prepare(
+		`SELECT o.email_from, o.reply_to_email, o.contact_email
+		 FROM organizations o JOIN organization_members m ON m.organization_id = o.id
+		 WHERE m.user_id = ? AND m.is_active = 1 LIMIT 1`
+	).bind(userId).first<{ email_from: string | null; reply_to_email: string | null; contact_email: string | null }>();
+	return {
+		from: organization?.email_from || env.EMAIL_FROM || 'booking@updates.neubofy.in',
+		replyTo: organization?.reply_to_email || organization?.contact_email || env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+	};
+}
+
 /**
  * Send booking confirmation email via Emailit API
  */
@@ -321,7 +337,10 @@ export async function getEmailTemplates(
 ): Promise<Map<EmailTemplateType, EmailTemplate>> {
 	const templates = await db
 		.prepare(
-			'SELECT template_type, is_enabled, subject, custom_message FROM email_templates WHERE user_id = ?'
+			`SELECT et.template_type, et.is_enabled, et.subject, et.custom_message
+			 FROM email_templates et
+			 JOIN organization_members om ON om.organization_id = et.organization_id AND om.user_id = ? AND om.is_active = 1
+			 WHERE et.organization_id = om.organization_id`
 		)
 		.bind(userId)
 		.all<{

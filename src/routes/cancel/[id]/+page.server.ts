@@ -5,7 +5,7 @@
 import { error, redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { sendCancellationEmail, sendAdminCancellationNotification, getEmailTemplates, isEmailEnabled } from '$lib/server/email';
+import { sendCancellationEmail, sendAdminCancellationNotification, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
 	const db = platform?.env?.DB;
@@ -166,6 +166,7 @@ export const actions: Actions = {
 
 						const replyToEmail = fullBooking.contact_email || fullBooking.host_email;
 						const templates = await getEmailTemplates(db, fullBooking.user_id);
+						const emailConfig = await getOrganizationEmailConfig(db, fullBooking.user_id, env);
 						if (isEmailEnabled(templates, 'cancellation')) {
 							const template = templates.get('cancellation');
 							await sendCancellationEmail(
@@ -189,8 +190,8 @@ export const actions: Actions = {
 								},
 								{
 									apiKey: env.RESEND_API_KEY,
-									from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
-									replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+									from: emailConfig.from,
+									replyTo: emailConfig.replyTo
 								},
 								template?.subject || undefined
 							);
@@ -219,7 +220,7 @@ export const actions: Actions = {
 								fullBooking.host_email,
 								{
 									apiKey: env.RESEND_API_KEY,
-									from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
+									from: emailConfig.from
 								}
 							);
 						} catch (adminErr) {

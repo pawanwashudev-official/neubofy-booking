@@ -12,7 +12,6 @@ declare global {
 				JWT_SECRET: string;
 				BASE_URL: string;
 				APP_URL?: string;
-				ADMIN_EMAIL?: string;
 				RESEND_API_KEY?: string;
 				EMAIL_FROM?: string;
 				EMAIL_REPLY_TO?: string;

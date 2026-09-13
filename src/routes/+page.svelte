@@ -17,7 +17,7 @@
 {#if data.user && data.eventTypes}
 	<!-- Event Types View -->
 	<div class="min-h-screen bg-gray-50 py-12">
-		<div class="max-w-2xl mx-auto px-4">
+		<div class="portal-shell max-w-2xl py-8 sm:py-12">
 			<!-- User Header -->
 			<div class="text-center mb-10">
 				{#if data.user.profileImage}

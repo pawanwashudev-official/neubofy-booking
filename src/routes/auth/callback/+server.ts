@@ -37,7 +37,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 	const clientId = env.GOOGLE_CLIENT_ID;
 	const clientSecret = env.GOOGLE_CLIENT_SECRET;
 	const appUrl = env.APP_URL;
-	const ownerEmail = (env.ORGANIZATION_OWNER_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
+	const ownerEmail = (env.ORGANIZATION_OWNER_EMAIL || '').trim().toLowerCase();
 
 	if (!clientId || !clientSecret || !appUrl) {
 		throw error(500, 'Missing OAuth configuration');
@@ -53,6 +53,14 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 
 		const normalizedEmail = userInfo.email.trim().toLowerCase();
 		const db = env.DB;
+		if (storedState.startsWith('calendar:')) {
+			const userId = storedState.slice('calendar:'.length);
+			const member = await db.prepare('SELECT id FROM organization_members WHERE user_id = ? AND is_active = 1 LIMIT 1').bind(userId).first();
+			if (!member) throw error(403, 'Your account is not active in an organization.');
+			await db.prepare('UPDATE users SET google_refresh_token = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?')
+				.bind(tokens.refresh_token || null, userId).run();
+			throw redirect(302, '/dashboard/calendars?success=google_connected');
+		}
 
 		let user = await db.prepare('SELECT id, is_active FROM users WHERE lower(email) = ?').bind(normalizedEmail).first<{ id: string; is_active: number | null }>();
 
@@ -98,7 +106,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 						`INSERT INTO organizations (id, name, slug, contact_email, reply_to_email, created_at, updated_at)
 						 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 					)
-					.bind(organizationId, userInfo.name, organizationSlug, normalizedEmail, normalizedEmail)
+					.bind(organizationId, 'Neubofy', organizationSlug, normalizedEmail, normalizedEmail)
 					.run();
 				existingOrganization = { id: organizationId };
 			}
@@ -146,7 +154,6 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			maxAge: 60 * 60 * 24 * 7 // 7 days
 		});
 
-		// Redirect to dashboard
 		throw redirect(302, '/dashboard');
 	} catch (err: any) {
 		// Re-throw redirects

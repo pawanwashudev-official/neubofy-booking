@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     timezone TEXT DEFAULT 'UTC',
     contact_email TEXT,
     reply_to_email TEXT,
+    email_from TEXT,
+    setup_complete BOOLEAN DEFAULT 0,
     settings JSON DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

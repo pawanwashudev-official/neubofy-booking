@@ -6,7 +6,7 @@
 import { error, redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { createCalendarEvent, cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { sendAdminRescheduleNotification, sendAdminCancellationNotification } from '$lib/server/email';
+import { sendAdminRescheduleNotification, sendAdminCancellationNotification, getOrganizationEmailConfig } from '$lib/server/email';
 
 export const load: PageServerLoad = async ({ params, url, platform }) => {
 	const db = platform?.env?.DB;
@@ -128,6 +128,7 @@ export const actions: Actions = {
 			if (!proposal || proposal.status !== 'pending') {
 				return fail(400, { error: 'Proposal already responded to or expired' });
 			}
+			const emailConfig = await getOrganizationEmailConfig(db, proposal.user_id, env);
 
 			// Cancel old Google Calendar event if exists
 			if (proposal.google_event_id) {
@@ -227,7 +228,7 @@ export const actions: Actions = {
 						proposal.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
+							from: emailConfig.from
 						}
 					);
 				} catch (emailErr) {
@@ -292,6 +293,7 @@ export const actions: Actions = {
 			if (!proposal || proposal.status !== 'pending') {
 				return fail(400, { error: 'Proposal already responded to or expired' });
 			}
+			const emailConfig = await getOrganizationEmailConfig(db, proposal.user_id, env);
 
 			// Cancel Google Calendar event if exists
 			if (proposal.google_event_id) {
@@ -353,7 +355,7 @@ export const actions: Actions = {
 						proposal.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
+							from: emailConfig.from
 						}
 					);
 				} catch (emailErr) {

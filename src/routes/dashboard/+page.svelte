@@ -146,13 +146,16 @@
 <div class="min-h-screen bg-gray-50">
 	<!-- Header -->
 	<header class="bg-white shadow-sm">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-			<div class="flex justify-between items-center">
+		<div class="portal-shell py-4">
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
 					<p class="text-sm text-gray-600">Welcome back, {data.user?.name || 'User'}!</p>
 				</div>
-				<div class="flex gap-4">
+				<div class="portal-actions sm:flex sm:w-auto sm:gap-3">
+					{#if data.role === 'owner'}
+						<a href="/dashboard/organization" class="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition">Organization</a>
+					{/if}
 					<a
 						href="/dashboard/users"
 						class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"

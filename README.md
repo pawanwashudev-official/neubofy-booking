@@ -65,8 +65,6 @@ Add these secrets (click "New repository secret" for each one):
 | `GOOGLE_CLIENT_ID` | Yes | From step 2 (ends with `.apps.googleusercontent.com`) |
 | `GOOGLE_CLIENT_SECRET` | Yes | From step 2 |
 | `RESEND_API_KEY` | No | [Resend](https://resend.com) API key for booking emails |
-| `EMAIL_FROM` | No | From address (e.g., `noreply@yourdomain.com`) |
-| `EMAIL_REPLY_TO` | No | Reply-To address (e.g., `support@yourdomain.com`) |
 | `CRON_SECRET` | No | Secures reminder endpoint ([generate one](https://generate-secret.vercel.app/32)) |
 | `MICROSOFT_CLIENT_ID` | No | For Outlook Calendar integration (see below) |
 | `MICROSOFT_CLIENT_SECRET` | No | For Outlook Calendar integration (see below) |

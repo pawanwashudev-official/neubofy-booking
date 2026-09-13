@@ -7,7 +7,7 @@
  */
 
 import { json, error, type RequestEvent } from '@sveltejs/kit';
-import { sendReminderEmail, getEmailTemplates, type EmailTemplateType } from '$lib/server/email';
+import { sendReminderEmail, getEmailTemplates, getOrganizationEmailConfig, type EmailTemplateType } from '$lib/server/email';
 
 export const GET = async ({ url, platform }: RequestEvent) => {
 	const env = platform?.env;
@@ -88,7 +88,8 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 				}
 
 				// Get user's email templates to check if still enabled and get custom settings
-				const templates = await getEmailTemplates(db, email.user_id);
+						const templates = await getEmailTemplates(db, email.user_id);
+						const emailConfig = await getOrganizationEmailConfig(db, email.user_id, env);
 				const template = templates.get(email.template_type as EmailTemplateType);
 
 				// Skip if template is disabled
@@ -135,8 +136,8 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 						email.template_type as 'reminder_24h' | 'reminder_1h' | 'reminder_30m',
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
-							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
+							from: emailConfig.from,
+							replyTo: emailConfig.replyTo
 						},
 						template?.subject || undefined
 					);

@@ -159,6 +159,9 @@
 					</p>
 				</div>
 			</div>
+			<a href="/auth/google-calendar" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+				{user?.googleConnected ? 'Reconnect' : 'Connect'}
+			</a>
 		</div>
 
 		<!-- Outlook Calendar -->
