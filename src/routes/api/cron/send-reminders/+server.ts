@@ -102,7 +102,7 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 				}
 
 				// Send the reminder email
-				if (env.EMAILIT_API_KEY) {
+				if (env.RESEND_API_KEY) {
 					// Parse user settings for time format
 					let timeFormat: '12h' | '24h' = '12h';
 					try {
@@ -134,9 +134,9 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 						},
 						email.template_type as 'reminder_24h' | 'reminder_1h' | 'reminder_30m',
 						{
-							apiKey: env.EMAILIT_API_KEY,
-							from: env.EMAIL_FROM || email.host_email,
-							replyTo: replyToEmail
+							apiKey: env.RESEND_API_KEY,
+							from: 'booking@updates.neubofy.in',
+							replyTo: 'meet@neubofy.in'
 						},
 						template?.subject || undefined
 					);

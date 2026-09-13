@@ -194,7 +194,7 @@ export const actions: Actions = {
 				.run();
 
 			// Send admin notification about accepted reschedule
-			if (env.EMAILIT_API_KEY) {
+			if (env.RESEND_API_KEY) {
 				try {
 					// Parse user settings for time format
 					let timeFormat: '12h' | '24h' = '12h';
@@ -226,8 +226,8 @@ export const actions: Actions = {
 						},
 						proposal.host_email,
 						{
-							apiKey: env.EMAILIT_API_KEY,
-							from: env.EMAIL_FROM || proposal.host_email
+							apiKey: env.RESEND_API_KEY,
+							from: 'booking@updates.neubofy.in'
 						}
 					);
 				} catch (emailErr) {
@@ -321,7 +321,7 @@ export const actions: Actions = {
 				.run();
 
 			// Send admin notification about declined reschedule (meeting cancelled)
-			if (env.EMAILIT_API_KEY) {
+			if (env.RESEND_API_KEY) {
 				try {
 					// Parse user settings for time format
 					let timeFormat: '12h' | '24h' = '12h';
@@ -352,8 +352,8 @@ export const actions: Actions = {
 						},
 						proposal.host_email,
 						{
-							apiKey: env.EMAILIT_API_KEY,
-							from: env.EMAIL_FROM || proposal.host_email
+							apiKey: env.RESEND_API_KEY,
+							from: 'booking@updates.neubofy.in'
 						}
 					);
 				} catch (emailErr) {
