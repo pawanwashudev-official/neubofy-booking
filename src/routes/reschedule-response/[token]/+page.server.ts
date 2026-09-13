@@ -227,7 +227,7 @@ export const actions: Actions = {
 						proposal.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: 'booking@updates.neubofy.in'
+							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
 						}
 					);
 				} catch (emailErr) {
@@ -353,7 +353,7 @@ export const actions: Actions = {
 						proposal.host_email,
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: 'booking@updates.neubofy.in'
+							from: env.EMAIL_FROM || 'booking@updates.neubofy.in'
 						}
 					);
 				} catch (emailErr) {

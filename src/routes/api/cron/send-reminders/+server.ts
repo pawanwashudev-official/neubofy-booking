@@ -135,8 +135,8 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 						email.template_type as 'reminder_24h' | 'reminder_1h' | 'reminder_30m',
 						{
 							apiKey: env.RESEND_API_KEY,
-							from: 'booking@updates.neubofy.in',
-							replyTo: 'meet@neubofy.in'
+							from: env.EMAIL_FROM || 'booking@updates.neubofy.in',
+							replyTo: env.EMAIL_REPLY_TO || 'meet@neubofy.in'
 						},
 						template?.subject || undefined
 					);
