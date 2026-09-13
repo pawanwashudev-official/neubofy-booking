@@ -57,6 +57,8 @@ Add these secrets (click "New repository secret" for each one):
 |--------|----------|-------------|
 | `CLOUDFLARE_API_TOKEN` | Yes | Your Cloudflare API token from step 1 |
 | `CLOUDFLARE_ACCOUNT_ID` | Yes | Your [Cloudflare Account ID](https://dash.cloudflare.com) (right sidebar) |
+| `D1_DATABASE_ID` | Yes | The fixed D1 database ID for `neubofy-booking-db` |
+| `KV_NAMESPACE_ID` | Yes | The fixed KV namespace ID for `neubofy-booking-kv` |
 | `ORGANIZATION_OWNER_EMAIL` | Yes | Google email allowed to bootstrap the organization; later users must be invited |
 | `JWT_SECRET` | Yes | Random string for session tokens ([generate one](https://generate-secret.vercel.app/32)) |
 | `APP_URL` | Yes | Your app URL (e.g., `https://YOUR-PROJECT.pages.dev` or your custom domain) |
