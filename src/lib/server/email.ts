@@ -35,5 +35,6 @@ export {
 	// Database functions
 	getEmailTemplates,
 	isEmailEnabled,
-	getOrganizationEmailConfig
+	getOrganizationEmailConfig,
+	sendOrganizationInvitationEmail
 } from './email/index';

@@ -19,6 +19,9 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let successMessage = $state('');
+	let inviteEmail = $state('');
+	let inviteRole = $state<'member' | 'admin'>('member');
+	let inviting = $state(false);
 
 	onMount(loadMembers);
 
@@ -64,6 +67,24 @@
 		member.is_active = member.is_active === 1 ? 0 : 1;
 		members = [...members];
 	}
+
+	async function inviteUser() {
+		inviting = true;
+		errorMessage = '';
+		successMessage = '';
+		const response = await fetch('/api/organization/users', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email: inviteEmail, role: inviteRole })
+		});
+		if (!response.ok) {
+			errorMessage = (await response.json().catch(() => ({})) as { message?: string }).message || 'Failed to send invitation';
+		} else {
+			successMessage = `Invitation sent to ${inviteEmail}.`;
+			inviteEmail = '';
+		}
+		inviting = false;
+	}
 </script>
 
 <svelte:head><title>Organization Users</title></svelte:head>
@@ -82,6 +103,21 @@
 	<main class="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
 		{#if errorMessage}<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errorMessage}</div>{/if}
 		{#if successMessage}<div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">{successMessage}</div>{/if}
+
+		{#if data.role === 'owner'}
+			<section class="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6">
+				<h2 class="font-semibold text-blue-950">Invite a user</h2>
+				<p class="mt-1 text-sm text-blue-800">Only people invited by the organization can sign in.</p>
+				<form onsubmit={(event) => { event.preventDefault(); inviteUser(); }} class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+					<input type="email" bind:value={inviteEmail} required placeholder="person@company.com" class="rounded-md border-blue-200 bg-white px-3 py-2.5 text-sm" />
+					<select bind:value={inviteRole} class="rounded-md border-blue-200 bg-white px-3 py-2.5 text-sm">
+						<option value="member">Member</option>
+						<option value="admin">Admin</option>
+					</select>
+					<button disabled={inviting} class="rounded-md bg-blue-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">{inviting ? 'Sending...' : 'Send invite'}</button>
+				</form>
+			</section>
+		{/if}
 
 		<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
 			<div class="border-b border-gray-200 px-4 py-4 sm:px-6">

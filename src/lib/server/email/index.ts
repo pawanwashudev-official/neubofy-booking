@@ -64,6 +64,37 @@ export async function getOrganizationEmailConfig(
 	};
 }
 
+export async function sendOrganizationInvitationEmail(
+	data: { organizationName: string; inviteeEmail: string; role: string; invitationUrl: string },
+	config: EmailConfig & { replyTo: string }
+): Promise<void> {
+	const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#0f172a">
+		<div style="padding:28px 24px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0">
+			<p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase">${data.organizationName}</p>
+			<h1 style="margin:0;font-size:26px">You are invited to join the team</h1>
+		</div>
+		<div style="padding:28px 24px;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 12px 12px">
+			<p>You have been invited to join <strong>${data.organizationName}</strong> as an ${data.role === 'admin' ? 'administrator' : 'team member'}.</p>
+			<p>Sign in with this email address to accept the invitation and access your portal.</p>
+			<p style="margin:28px 0"><a href="${data.invitationUrl}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:13px 20px;border-radius:8px;font-weight:600">Accept invitation</a></p>
+			<p style="font-size:13px;color:#64748b">If you were not expecting this invitation, you can safely ignore this email.</p>
+		</div>
+</div>`;
+	const response = await fetch('https://api.resend.com/emails', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+		body: JSON.stringify({
+			from: `${data.organizationName} <${config.from}>`,
+			to: data.inviteeEmail,
+			reply_to: config.replyTo,
+			subject: `You are invited to join ${data.organizationName}`,
+			html
+		})
+	});
+	if (!response.ok) throw new Error(`Failed to send invitation email: ${await response.text()}`);
+}
+
 /**
  * Send booking confirmation email via Emailit API
  */
