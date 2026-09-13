@@ -93,6 +93,7 @@
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 		<!-- Header -->
 		<div class="text-center mb-16">
+			<img src="/neubofylogo.png" alt="Neubofy" class="mx-auto mb-6 h-20 w-20 object-contain" />
 			<h1 class="text-5xl font-bold text-gray-900 mb-4">
 				Neubofy Booking
 			</h1>

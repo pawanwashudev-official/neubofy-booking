@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at DATETIME
 );
 
-CREATE INDEX idx_users_slug ON users(slug);
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_slug ON users(slug);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Organization memberships and invitation-only access
 CREATE TABLE IF NOT EXISTS organization_members (
@@ -49,8 +49,8 @@ CREATE TABLE IF NOT EXISTS organization_members (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_org_members_user ON organization_members(user_id);
-CREATE INDEX idx_org_members_org ON organization_members(organization_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON organization_members(organization_id, is_active);
 
 CREATE TABLE IF NOT EXISTS organization_invitations (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -67,8 +67,8 @@ CREATE TABLE IF NOT EXISTS organization_invitations (
     FOREIGN KEY (invited_by) REFERENCES users(id)
 );
 
-CREATE INDEX idx_org_invitations_email ON organization_invitations(organization_id, email, expires_at);
-CREATE INDEX idx_org_invitations_token ON organization_invitations(token_digest);
+CREATE INDEX IF NOT EXISTS idx_org_invitations_email ON organization_invitations(organization_id, email, expires_at);
+CREATE INDEX IF NOT EXISTS idx_org_invitations_token ON organization_invitations(token_digest);
 
 -- Event types (different meeting types a user can offer)
 CREATE TABLE IF NOT EXISTS event_types (
@@ -92,8 +92,8 @@ CREATE TABLE IF NOT EXISTS event_types (
     UNIQUE(user_id, slug)
 );
 
-CREATE INDEX idx_event_types_user ON event_types(user_id);
-CREATE INDEX idx_event_types_active ON event_types(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_event_types_user ON event_types(user_id);
+CREATE INDEX IF NOT EXISTS idx_event_types_active ON event_types(user_id, is_active);
 
 -- Availability rules (recurring weekly schedule)
 CREATE TABLE IF NOT EXISTS availability_rules (
@@ -110,8 +110,8 @@ CREATE TABLE IF NOT EXISTS availability_rules (
     FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_availability_rules_user ON availability_rules(user_id);
-CREATE INDEX idx_availability_rules_active ON availability_rules(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_availability_rules_user ON availability_rules(user_id);
+CREATE INDEX IF NOT EXISTS idx_availability_rules_active ON availability_rules(user_id, is_active);
 
 -- Availability overrides (specific date exceptions)
 CREATE TABLE IF NOT EXISTS availability_overrides (
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS availability_overrides (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_availability_overrides_user_date ON availability_overrides(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_availability_overrides_user_date ON availability_overrides(user_id, date);
 
 -- Bookings
 CREATE TABLE IF NOT EXISTS bookings (
@@ -152,10 +152,10 @@ CREATE TABLE IF NOT EXISTS bookings (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE INDEX idx_bookings_user_time ON bookings(user_id, start_time);
-CREATE INDEX idx_bookings_event_type ON bookings(event_type_id);
-CREATE INDEX idx_bookings_status ON bookings(status);
-CREATE INDEX idx_bookings_google_event ON bookings(google_event_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_user_time ON bookings(user_id, start_time);
+CREATE INDEX IF NOT EXISTS idx_bookings_event_type ON bookings(event_type_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_google_event ON bookings(google_event_id);
 
 -- Cache control table (fallback when KV is unavailable)
 CREATE TABLE IF NOT EXISTS cache_control (
@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS cache_control (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_cache_expires ON cache_control(expires_at);
+CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache_control(expires_at);
 
 -- API usage tracking
 CREATE TABLE IF NOT EXISTS api_usage (
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS api_usage (
     UNIQUE(date, endpoint)
 );
 
-CREATE INDEX idx_api_usage_date ON api_usage(date);
+CREATE INDEX IF NOT EXISTS idx_api_usage_date ON api_usage(date);
 
 -- Sessions for auth
 CREATE TABLE IF NOT EXISTS sessions (
@@ -188,8 +188,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_sessions_token ON sessions(token);
-CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 -- Webhook subscriptions
 CREATE TABLE IF NOT EXISTS webhooks (
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_webhooks_user ON webhooks(user_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhooks(user_id);
 
 -- Email templates and settings
 CREATE TABLE IF NOT EXISTS email_templates (
@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS email_templates (
     UNIQUE(user_id, template_type)
 );
 
-CREATE INDEX idx_email_templates_user ON email_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_templates_user ON email_templates(user_id);
 
 -- Scheduled emails for reminders
 CREATE TABLE IF NOT EXISTS scheduled_emails (
@@ -235,8 +235,8 @@ CREATE TABLE IF NOT EXISTS scheduled_emails (
     FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_scheduled_emails_pending ON scheduled_emails(status, scheduled_for);
-CREATE INDEX idx_scheduled_emails_booking ON scheduled_emails(booking_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_emails_pending ON scheduled_emails(status, scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_scheduled_emails_booking ON scheduled_emails(booking_id);
 
 -- Reschedule proposals for host-initiated reschedules
 CREATE TABLE IF NOT EXISTS reschedule_proposals (
@@ -254,9 +254,9 @@ CREATE TABLE IF NOT EXISTS reschedule_proposals (
     FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_reschedule_proposals_booking ON reschedule_proposals(booking_id);
-CREATE INDEX idx_reschedule_proposals_token ON reschedule_proposals(response_token);
-CREATE INDEX idx_reschedule_proposals_status ON reschedule_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_booking ON reschedule_proposals(booking_id);
+CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_token ON reschedule_proposals(response_token);
+CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_status ON reschedule_proposals(status);
 
 -- Views for common queries
 CREATE VIEW IF NOT EXISTS active_event_types AS

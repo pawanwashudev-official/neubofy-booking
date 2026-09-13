@@ -6,15 +6,59 @@
 
 	// Local reactive copy of bookings for UI updates
 	let bookings = $state(data.recentBookings || []);
+	let eventTypes = $state(data.eventTypes || []);
 
 	// Cancel booking state
 	let cancellingBookingId = $state<string | null>(null);
 	let showCancelModal = $state(false);
 	let cancelSuccess = $state('');
+	let deletionSuccess = $state('');
 
 	// Reschedule booking state
 	let reschedulingBookingId = $state<string | null>(null);
 	let rescheduleSuccess = $state('');
+
+	async function deleteEventType(eventType: { id: string; name: string }) {
+		if (!confirm(`Delete ${eventType.name} and its bookings? This cannot be undone.`)) return;
+		const confirmation = prompt(`Type ${eventType.name} to confirm deletion.`);
+		if (confirmation !== eventType.name) return;
+		const response = await fetch(`/api/event-type/${eventType.slug}`, {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ confirmation })
+		});
+		if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { message?: string }).message || 'Failed to delete event type');
+		eventTypes = eventTypes.filter((item) => item.id !== eventType.id);
+		deletionSuccess = `${eventType.name} was deleted.`;
+	}
+
+	async function deleteBooking(booking: { id: string; attendee_name: string }) {
+		if (!confirm(`Delete this booking for ${booking.attendee_name}? This cannot be undone.`)) return;
+		const confirmation = prompt(`Type ${booking.attendee_name} to confirm deletion.`);
+		if (confirmation !== booking.attendee_name) return;
+		const response = await fetch('/api/bookings/delete', {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bookingId: booking.id, confirmation })
+		});
+		if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { message?: string }).message || 'Failed to delete booking');
+		bookings = bookings.filter((item) => item.id !== booking.id);
+		deletionSuccess = 'Booking was deleted.';
+	}
+
+	async function deleteOrganization() {
+		if (!data.organization?.name) return;
+		if (!confirm('Delete the complete organization and all users, bookings, event types, calendars, and settings? This cannot be undone.')) return;
+		const confirmation = prompt(`Type ${data.organization.name} to permanently delete it.`);
+		if (confirmation !== data.organization.name) return;
+		const response = await fetch('/api/organization/delete', {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ confirmation })
+		});
+		if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { message?: string }).message || 'Failed to delete organization');
+		window.location.href = '/';
+	}
 
 	function openCancelModal(bookingId: string) {
 		cancellingBookingId = bookingId;
@@ -110,6 +154,12 @@
 				</div>
 				<div class="flex gap-4">
 					<a
+						href="/dashboard/users"
+						class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+					>
+						Users
+					</a>
+					<a
 						href="/dashboard/calendars"
 						class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
 					>
@@ -173,11 +223,23 @@
 
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
 			<!-- Event Types -->
-			<EventTypesList eventTypes={data.eventTypes || []} />
+					<EventTypesList {eventTypes} onDeleteClick={deleteEventType} />
 
 			<!-- Recent Bookings -->
-			<BookingsList {bookings} onCancelClick={openCancelModal} onRescheduleClick={openRescheduleModal} />
+					<BookingsList {bookings} onCancelClick={openCancelModal} onRescheduleClick={openRescheduleModal} onDeleteClick={deleteBooking} />
 		</div>
+
+				{#if deletionSuccess}
+					<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{deletionSuccess}</div>
+				{/if}
+
+				{#if data.role === 'owner'}
+					<section class="mt-10 rounded-xl border border-red-200 bg-red-50 p-5">
+						<h2 class="font-semibold text-red-900">Danger zone</h2>
+						<p class="mt-1 text-sm text-red-800">Permanently delete {data.organization?.name || 'this organization'} and every record inside it.</p>
+						<button onclick={deleteOrganization} class="mt-4 rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">Delete organization</button>
+					</section>
+				{/if}
 	</main>
 </div>
 

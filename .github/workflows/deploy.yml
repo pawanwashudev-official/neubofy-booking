@@ -15,6 +15,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ORGANIZATION_OWNER_EMAIL: ${{ secrets.ORGANIZATION_OWNER_EMAIL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           APP_URL: ${{ secrets.APP_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -23,7 +24,7 @@ jobs:
           missing=()
           [ -z "$CLOUDFLARE_API_TOKEN" ] && missing+=("CLOUDFLARE_API_TOKEN")
           [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing+=("CLOUDFLARE_ACCOUNT_ID")
-          [ -z "$ADMIN_EMAIL" ] && missing+=("ADMIN_EMAIL")
+          [ -z "$ORGANIZATION_OWNER_EMAIL" ] && [ -z "$ADMIN_EMAIL" ] && missing+=("ORGANIZATION_OWNER_EMAIL or ADMIN_EMAIL")
           [ -z "$JWT_SECRET" ] && missing+=("JWT_SECRET")
           [ -z "$APP_URL" ] && missing+=("APP_URL")
           [ -z "$GOOGLE_CLIENT_ID" ] && missing+=("GOOGLE_CLIENT_ID")
@@ -77,16 +78,15 @@ jobs:
             exit 1
           fi
 
-          # Create KV namespace if it doesn't exist (ignore error if exists)
+          # Create KV namespace if it doesn't exist.
           echo "Creating KV namespace..."
-          npx wrangler kv namespace create neubofy-booking-kv || true
+          npx wrangler kv namespace create neubofy-booking-kv >/tmp/kv-create.log 2>&1 || true
 
           # Get KV namespace ID from the list output
           echo "Getting KV namespace ID..."
-          KV_LIST=$(npx wrangler kv namespace list)
+          KV_LIST=$(npx wrangler kv namespace list --json)
           echo "$KV_LIST"
-          # Extract ID for namespace titled "neubofy-booking-kv"
-          KV_ID=$(echo "$KV_LIST" | grep -E '"title": "neubofy-booking-kv"' -B1 | grep '"id"' | head -1 | sed 's/.*"id": "\([^"]*\)".*/\1/')
+          KV_ID=$(echo "$KV_LIST" | jq -r '.[] | select(.title=="neubofy-booking-kv") | .id' | head -1)
           echo "KV namespace ID: $KV_ID"
 
           if [ -n "$KV_ID" ] && [ "$KV_ID" != "null" ]; then
@@ -97,22 +97,27 @@ jobs:
             exit 1
           fi
 
-          # Show final wrangler.toml
-          echo "Final wrangler.toml:"
-          cat wrangler.toml
+          # Initialize only a brand-new database. schema.sql is the complete
+          # current schema; replaying it on every deployment causes duplicate
+          # index errors and makes migration failures invisible.
+          TABLE_COUNT=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';" --json | jq -r '.[0].results[0].count // 0')
+          if [ "$TABLE_COUNT" = "0" ]; then
+            echo "Initializing new database schema..."
+            npx wrangler d1 execute neubofy-booking-db --file=./schema.sql --remote
+          else
+            echo "Database already initialized with $TABLE_COUNT tables; skipping schema.sql"
+          fi
 
-          # Initialize database schema (ignore errors if tables exist)
-          echo "Initializing database schema..."
-          npx wrangler d1 execute neubofy-booking-db --file=./schema.sql --remote || true
-
-          # Run migrations
-          echo "Running migrations..."
-          for migration in migrations/*.sql; do
-            if [ -f "$migration" ]; then
-              echo "Running migration: $migration"
-              npx wrangler d1 execute neubofy-booking-db --file="$migration" --remote || true
-            fi
-          done
+          # Apply the organization upgrade only to installations created
+          # before organization support. Older migrations are already present
+          # in schema.sql and must never be replayed on production.
+          ORG_TABLE=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'organizations';" --json | jq -r '.[0].results[0].count // 0')
+          if [ "$ORG_TABLE" = "0" ]; then
+            echo "Applying organization access migration..."
+            npx wrangler d1 execute neubofy-booking-db --file=./migrations/0009_organization_access.sql --remote
+          else
+            echo "Organization schema already present; skipping migration"
+          fi
 
       - name: Build
         run: npm run build
@@ -147,6 +152,7 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ORGANIZATION_OWNER_EMAIL: ${{ secrets.ORGANIZATION_OWNER_EMAIL }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
         run: |
@@ -165,10 +171,9 @@ jobs:
           CRON_SECRET = "$CRON_SECRET"
           MICROSOFT_CLIENT_ID = "$MICROSOFT_CLIENT_ID"
           MICROSOFT_CLIENT_SECRET = "$MICROSOFT_CLIENT_SECRET"
+          ORGANIZATION_OWNER_EMAIL = "${ORGANIZATION_OWNER_EMAIL:-$ADMIN_EMAIL}"
           EOF
 
-          echo "Final wrangler.toml:"
-          cat wrangler.toml
           npx wrangler pages deploy .svelte-kit/cloudflare --project-name=neubofy-booking --commit-dirty=true
 
       - name: Deploy Cron Worker

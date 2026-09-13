@@ -21,9 +21,10 @@
 		bookings: Booking[];
 		onCancelClick: (bookingId: string) => void;
 		onRescheduleClick: (bookingId: string) => void;
+		onDeleteClick: (booking: Booking) => void;
 	}
 
-	let { bookings, onCancelClick, onRescheduleClick }: Props = $props();
+	let { bookings, onCancelClick, onRescheduleClick, onDeleteClick }: Props = $props();
 
 	const { formatCompactDateTime } = createFormatters();
 
@@ -92,6 +93,14 @@
 									class="text-xs text-red-600 hover:text-red-700 font-medium"
 								>
 									Cancel
+								</button>
+							{/if}
+							{#if booking.status === 'canceled' || new Date(booking.end_time).getTime() <= Date.now()}
+								<button
+									onclick={() => onDeleteClick(booking)}
+									class="text-xs font-medium text-red-700 hover:text-red-900"
+								>
+									Delete
 								</button>
 							{/if}
 						</div>

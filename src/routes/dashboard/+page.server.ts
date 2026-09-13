@@ -42,7 +42,7 @@ export const load: PageServerLoad = async (event) => {
 			is_active: number;
 		}>();
 
-	// Get upcoming bookings (only future meetings)
+	// Get organization bookings so completed and canceled records can be cleaned up.
 	const recentBookings = await db
 		.prepare(
 			`SELECT b.id, b.start_time, b.end_time, b.attendee_name, b.attendee_email,
@@ -50,9 +50,9 @@ export const load: PageServerLoad = async (event) => {
 				b.event_type_id, et.name as event_type_name, et.slug as event_type_slug, et.duration_minutes
 			FROM bookings b
 			JOIN event_types et ON b.event_type_id = et.id
-			WHERE b.organization_id = ? AND (? = 1 OR b.user_id = ?) AND b.start_time >= datetime('now')
-			ORDER BY b.created_at DESC
-			LIMIT 20`
+			WHERE b.organization_id = ? AND (? = 1 OR b.user_id = ?)
+			ORDER BY b.start_time DESC
+			LIMIT 50`
 		)
 		.bind(auth.organizationId, isOrganizationAdmin(auth.role) ? 1 : 0, auth.userId)
 		.all<{

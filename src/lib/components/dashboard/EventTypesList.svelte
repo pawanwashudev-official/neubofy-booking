@@ -10,9 +10,10 @@
 
 	interface Props {
 		eventTypes: EventType[];
+		onDeleteClick: (eventType: EventType) => void;
 	}
 
-	let { eventTypes }: Props = $props();
+	let { eventTypes, onDeleteClick }: Props = $props();
 </script>
 
 <div>
@@ -61,6 +62,12 @@
 						>
 							Edit
 						</a>
+						<button
+							onclick={() => onDeleteClick(eventType)}
+							class="text-sm text-red-600 hover:text-red-700"
+						>
+							Delete
+						</button>
 					</div>
 				</div>
 			{/each}
