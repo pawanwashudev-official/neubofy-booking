@@ -98,7 +98,7 @@ export const POST = async (event: RequestEvent) => {
 			.run();
 
 		// Send email to attendee with proposal
-		if (env.EMAILIT_API_KEY) {
+		if (env.RESEND_API_KEY) {
 			try {
 				// Parse user settings for time format
 				let timeFormat: '12h' | '24h' = '12h';
@@ -132,9 +132,9 @@ export const POST = async (event: RequestEvent) => {
 						brandColor: booking.brand_color || '#3b82f6'
 					},
 					{
-						apiKey: env.EMAILIT_API_KEY,
-						from: env.EMAIL_FROM || booking.host_email,
-						replyTo: booking.contact_email || booking.host_email
+						apiKey: env.RESEND_API_KEY,
+						from: 'booking@updates.neubofy.in',
+						replyTo: 'meet@neubofy.in'
 					}
 				);
 			} catch (emailErr) {
@@ -271,7 +271,7 @@ async function sendRescheduleProposalEmail(data: RescheduleProposalEmailData, co
 </html>
 	`;
 
-	const response = await fetch('https://api.emailit.com/v1/emails', {
+	const response = await fetch('https://api.resend.com/emails', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
