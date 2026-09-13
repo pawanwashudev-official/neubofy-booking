@@ -4,12 +4,12 @@
 
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { getCurrentUser } from '$lib/server/auth';
+import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
 
 export const load: PageServerLoad = async (event) => {
-	const userId = await getCurrentUser(event);
+	const auth = await getAuthContext(event);
 
-	if (!userId) {
+	if (!auth) {
 		throw redirect(302, '/auth/login');
 	}
 
@@ -21,7 +21,7 @@ export const load: PageServerLoad = async (event) => {
 	// Get user info
 	const user = await db
 		.prepare('SELECT id, email, name, slug, profile_image, brand_color, settings, contact_email FROM users WHERE id = ?')
-		.bind(userId)
+		.bind(auth.userId)
 		.first<{ id: string; email: string; name: string; slug: string; profile_image: string | null; brand_color: string | null; settings: string | null; contact_email: string | null }>();
 
 	// Get event types
@@ -29,10 +29,10 @@ export const load: PageServerLoad = async (event) => {
 		.prepare(
 			`SELECT id, name, slug, duration_minutes as duration, description, is_active
 			FROM event_types
-			WHERE user_id = ?
+			WHERE organization_id = ? AND (? = 1 OR user_id = ?)
 			ORDER BY name ASC`
 		)
-		.bind(userId)
+		.bind(auth.organizationId, isOrganizationAdmin(auth.role) ? 1 : 0, auth.userId)
 		.all<{
 			id: string;
 			name: string;
@@ -50,11 +50,11 @@ export const load: PageServerLoad = async (event) => {
 				b.event_type_id, et.name as event_type_name, et.slug as event_type_slug, et.duration_minutes
 			FROM bookings b
 			JOIN event_types et ON b.event_type_id = et.id
-			WHERE b.user_id = ? AND b.start_time >= datetime('now')
+			WHERE b.organization_id = ? AND (? = 1 OR b.user_id = ?) AND b.start_time >= datetime('now')
 			ORDER BY b.created_at DESC
 			LIMIT 20`
 		)
-		.bind(userId)
+		.bind(auth.organizationId, isOrganizationAdmin(auth.role) ? 1 : 0, auth.userId)
 		.all<{
 			id: string;
 			start_time: string;
@@ -76,6 +76,12 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		user,
+		organization: await db
+			.prepare('SELECT id, name, slug, profile_image, brand_color, timezone, contact_email, reply_to_email, settings FROM organizations WHERE id = ?')
+			.bind(auth.organizationId)
+			.first(),
+		role: auth.role,
+		canManageOrganization: isOrganizationAdmin(auth.role),
 		eventTypes: eventTypes.results,
 		recentBookings: recentBookings.results,
 		appUrl

@@ -73,23 +73,27 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		const db = env.DB;
 
-		// Get the first (and only) user for single-user setup
-		const user = await db
-			.prepare('SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token FROM users LIMIT 1')
-			.first<{ id: string; email: string; name: string; slug: string; contact_email: string | null; settings: string | null; brand_color: string | null; outlook_refresh_token: string | null }>();
+		const organization = await db
+			.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1')
+			.first<{ id: string }>();
 
-		if (!user) {
-			throw error(404, 'User not found');
-		}
+		if (!organization) throw error(404, 'Organization not found');
 
 		const eventType = await db
-			.prepare('SELECT id, name, duration_minutes as duration, description, invite_calendar FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1')
-			.bind(user.id, eventSlug)
-			.first<{ id: string; name: string; duration: number; description: string; invite_calendar: string | null }>();
+			.prepare('SELECT id, user_id, name, duration_minutes as duration, description, invite_calendar FROM event_types WHERE organization_id = ? AND slug = ? AND is_active = 1')
+			.bind(organization.id, eventSlug)
+			.first<{ id: string; user_id: string; name: string; duration: number; description: string; invite_calendar: string | null }>();
 
 		if (!eventType) {
 			throw error(404, 'Event type not found or inactive');
 		}
+
+		const user = await db
+			.prepare('SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token FROM users WHERE id = ? AND is_active = 1')
+			.bind(eventType.user_id)
+			.first<{ id: string; email: string; name: string; slug: string; contact_email: string | null; settings: string | null; brand_color: string | null; outlook_refresh_token: string | null }>();
+
+		if (!user) throw error(404, 'Booking host not found');
 
 		// Parse user settings for global calendar defaults
 		let userSettings: { defaultInviteCalendar?: string } = {};
@@ -207,12 +211,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		const result = await db
 			.prepare(
 				`INSERT INTO bookings (
-					user_id, event_type_id, start_time, end_time,
+					organization_id, user_id, event_type_id, start_time, end_time,
 					attendee_name, attendee_email, attendee_notes, status,
 					google_event_id, outlook_event_id, meeting_url, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
 			)
 			.bind(
+				organization.id,
 				user.id,
 				eventType.id,
 				startTime,

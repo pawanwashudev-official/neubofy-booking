@@ -1,7 +1,5 @@
 /**
- * Booking page for specific event type (single-user)
- * Uses server-side load to avoid SSR internal fetch issues on Cloudflare Pages
- * See: https://github.com/dennisklappe/CloudMeet/issues/11
+ * Booking page for a specific organization event type.
  */
 
 import { error } from '@sveltejs/kit';
@@ -13,67 +11,67 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 		throw error(500, 'Platform env not available');
 	}
 
-	const slug = params.slug;
 	const db = env.DB;
 
 	try {
-		// Get the first (and only) user
-		const user = await db
-			.prepare('SELECT id, slug, name, profile_image, brand_color, settings, outlook_refresh_token FROM users LIMIT 1')
-			.first<{ id: string; slug: string; name: string; profile_image: string | null; brand_color: string | null; settings: string | null; outlook_refresh_token: string | null }>();
+		const organization = await db
+			.prepare('SELECT id, slug, name, profile_image, brand_color FROM organizations ORDER BY created_at LIMIT 1')
+			.first<{ id: string; slug: string; name: string; profile_image: string | null; brand_color: string | null }>();
 
-		if (!user) {
-			throw error(404, 'User not found');
-		}
+		if (!organization) throw error(404, 'Organization not found');
 
-		// Get event type
 		const eventType = await db
 			.prepare(
-				'SELECT id, name, slug, duration_minutes as duration, description, is_active, cover_image, invite_calendar FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1'
+				`SELECT et.id, et.slug, et.name, et.duration_minutes as duration, et.description,
+					et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
+					u.name as host_name, u.email as host_email, u.settings as host_settings,
+					u.outlook_refresh_token
+				 FROM event_types et
+				 JOIN users u ON u.id = et.user_id
+				 WHERE et.organization_id = ? AND et.slug = ? AND et.is_active = 1`
 			)
-			.bind(user.id, slug)
+			.bind(organization.id, params.slug)
 			.first<{
 				id: string;
-				name: string;
 				slug: string;
+				name: string;
 				duration: number;
-				description: string;
+				description: string | null;
 				is_active: number;
 				cover_image: string | null;
 				invite_calendar: string | null;
+				host_user_id: string;
+				host_name: string;
+				host_email: string;
+				host_settings: string | null;
+				outlook_refresh_token: string | null;
 			}>();
 
-		if (!eventType) {
-			throw error(404, 'Event type not found');
+		if (!eventType) throw error(404, 'Event type not found');
+
+		let hostSettings: { timeFormat?: string; defaultInviteCalendar?: string } = {};
+		try {
+			hostSettings = eventType.host_settings ? JSON.parse(eventType.host_settings) : {};
+		} catch {
+			hostSettings = {};
 		}
 
-		// Parse user settings
-		let userSettings: { timeFormat?: string; defaultInviteCalendar?: string } = {};
-		try {
-			userSettings = user.settings ? JSON.parse(user.settings) : {};
-		} catch {}
-
-		// Determine effective invite calendar: use event type override if set, otherwise use global settings
-		// Fall back to Google if Outlook not available
-		const outlookConnected = !!user.outlook_refresh_token;
+		let effectiveInviteCalendar = eventType.invite_calendar || hostSettings.defaultInviteCalendar || 'google';
 		const outlookConfigured = !!(env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET);
-		let effectiveInviteCalendar = eventType.invite_calendar || userSettings.defaultInviteCalendar || 'google';
-		if (effectiveInviteCalendar === 'outlook' && (!outlookConnected || !outlookConfigured)) {
+		if (effectiveInviteCalendar === 'outlook' && (!eventType.outlook_refresh_token || !outlookConfigured)) {
 			effectiveInviteCalendar = 'google';
 		}
 
 		return {
 			slug: eventType.slug,
-			eventType: {
-				...eventType,
-				invite_calendar: effectiveInviteCalendar
-			},
+			eventType: { ...eventType, invite_calendar: effectiveInviteCalendar },
 			user: {
-				name: user.name,
-				profileImage: user.profile_image,
-				brandColor: user.brand_color || '#3b82f6',
-				timeFormat: userSettings.timeFormat || '12h'
-			}
+				name: organization.name,
+				profileImage: organization.profile_image,
+				brandColor: organization.brand_color || '#3b82f6',
+				timeFormat: hostSettings.timeFormat || '12h'
+			},
+			host: { name: eventType.host_name, email: eventType.host_email }
 		};
 	} catch (err: any) {
 		console.error('Booking page load error:', err);

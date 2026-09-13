@@ -18,6 +18,7 @@ declare global {
 				EMAIL_REPLY_TO?: string;
 				TURNSTILE_SECRET_KEY?: string;
 				CRON_SECRET?: string;
+				ORGANIZATION_OWNER_EMAIL?: string;
 			};
 			context: {
 				waitUntil(promise: Promise<any>): void;

@@ -57,7 +57,7 @@ Add these secrets (click "New repository secret" for each one):
 |--------|----------|-------------|
 | `CLOUDFLARE_API_TOKEN` | Yes | Your Cloudflare API token from step 1 |
 | `CLOUDFLARE_ACCOUNT_ID` | Yes | Your [Cloudflare Account ID](https://dash.cloudflare.com) (right sidebar) |
-| `ADMIN_EMAIL` | Yes | Your Google email (only this account can login) |
+| `ORGANIZATION_OWNER_EMAIL` | Yes | Google email allowed to bootstrap the organization; later users must be invited |
 | `JWT_SECRET` | Yes | Random string for session tokens ([generate one](https://generate-secret.vercel.app/32)) |
 | `APP_URL` | Yes | Your app URL (e.g., `https://YOUR-PROJECT.pages.dev` or your custom domain) |
 | `GOOGLE_CLIENT_ID` | Yes | From step 2 (ends with `.apps.googleusercontent.com`) |

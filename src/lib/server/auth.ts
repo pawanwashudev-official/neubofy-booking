@@ -1,9 +1,16 @@
 /**
- * Server-side authentication utilities for Google OAuth
- * Single-user system - only the owner can log in
+ * Server-side authentication utilities for Google OAuth and organization access.
  */
 
 import type { RequestEvent } from '@sveltejs/kit';
+
+export type OrganizationRole = 'owner' | 'admin' | 'member';
+
+export interface AuthContext {
+	userId: string;
+	organizationId: string;
+	role: OrganizationRole;
+}
 
 export interface GoogleTokenResponse {
 	access_token: string;
@@ -196,6 +203,40 @@ export async function getCurrentUser(
 
 	const session = await verifySessionToken(sessionToken, jwtSecret);
 	return session?.userId ?? null;
+}
+
+/** Resolve the active organization membership on every request. */
+export async function getAuthContext(event: RequestEvent): Promise<AuthContext | null> {
+	const userId = await getCurrentUser(event);
+	const db = event.platform?.env?.DB;
+	if (!userId || !db) return null;
+
+	const membership = await db
+		.prepare(
+			`SELECT organization_id as organizationId, role
+			 FROM organization_members
+			 WHERE user_id = ? AND is_active = 1
+			 ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END
+			 LIMIT 1`
+		)
+		.bind(userId)
+		.first<{ organizationId: string; role: OrganizationRole }>();
+
+	return membership ? { userId, ...membership } : null;
+}
+
+export async function requireAuthContext(event: RequestEvent): Promise<AuthContext> {
+	const context = await getAuthContext(event);
+	if (!context) throw new Error('Not authenticated');
+	return context;
+}
+
+export function isOrganizationAdmin(role: OrganizationRole): boolean {
+	return role === 'owner' || role === 'admin';
+}
+
+export function isOrganizationOwner(role: OrganizationRole): boolean {
+	return role === 'owner';
 }
 
 /**

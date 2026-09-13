@@ -37,7 +37,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 	const clientId = env.GOOGLE_CLIENT_ID;
 	const clientSecret = env.GOOGLE_CLIENT_SECRET;
 	const appUrl = env.APP_URL;
-	const adminEmail = env.ADMIN_EMAIL;
+	const ownerEmail = (env.ORGANIZATION_OWNER_EMAIL || env.ADMIN_EMAIL || '').trim().toLowerCase();
 
 	if (!clientId || !clientSecret || !appUrl) {
 		throw error(500, 'Missing OAuth configuration');
@@ -51,50 +51,83 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 		// Get user info
 		const userInfo = await getGoogleUserInfo(tokens.access_token);
 
-		// Restrict login to admin email only
-		if (adminEmail && userInfo.email !== adminEmail) {
-			throw error(403, 'Access denied. Only the admin can log in.');
-		}
-
-		// Check if user exists in database, or create them
+		const normalizedEmail = userInfo.email.trim().toLowerCase();
 		const db = env.DB;
 
-		// Check if user exists by email
-		let user = await db.prepare('SELECT id FROM users WHERE email = ?').bind(userInfo.email).first<{ id: string }>();
+		let user = await db.prepare('SELECT id, is_active FROM users WHERE lower(email) = ?').bind(normalizedEmail).first<{ id: string; is_active: number | null }>();
 
 		if (!user) {
-			// Create the admin user
+			const invitation = await db
+				.prepare(
+					`SELECT id, organization_id, role FROM organization_invitations
+					 WHERE lower(email) = ? AND accepted_at IS NULL AND revoked_at IS NULL
+					 AND expires_at > CURRENT_TIMESTAMP ORDER BY created_at DESC LIMIT 1`
+				)
+				.bind(normalizedEmail)
+				.first<{ id: string; organization_id: string; role: 'admin' | 'member' }>();
+
+			if (!ownerEmail || normalizedEmail !== ownerEmail) {
+				if (!invitation) throw error(403, 'Access denied. An active organization invitation is required.');
+			}
+
 			const userId = crypto.randomUUID();
-			const slug = userInfo.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+			const slug = `${normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, '') || 'user'}-${userId.slice(0, 8)}`;
 
 			await db
 				.prepare(
-					`INSERT INTO users (id, email, name, slug, google_refresh_token, created_at)
-					VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+					`INSERT INTO users (id, email, name, slug, google_refresh_token, is_active, last_login_at, created_at)
+					VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 				)
 				.bind(
 					userId,
-					userInfo.email,
+					normalizedEmail,
 					userInfo.name,
 					slug,
 					tokens.refresh_token || null
 				)
 				.run();
 
-			user = { id: userId };
+			user = { id: userId, is_active: 1 };
+
+			let existingOrganization = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
+			if (!existingOrganization && !invitation) {
+				const organizationId = crypto.randomUUID();
+				const organizationSlug = `${normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, '') || 'organization'}-${organizationId.slice(0, 8)}`;
+				await db
+					.prepare(
+						`INSERT INTO organizations (id, name, slug, contact_email, reply_to_email, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+					)
+					.bind(organizationId, userInfo.name, organizationSlug, normalizedEmail, normalizedEmail)
+					.run();
+				existingOrganization = { id: organizationId };
+			}
+			const organizationId = invitation?.organization_id || existingOrganization?.id;
+			if (!organizationId) throw error(500, 'Organization setup is incomplete.');
+			await db.prepare('INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, ?)')
+				.bind(organizationId, userId, invitation?.role || 'owner').run();
+			if (invitation) {
+				await db.prepare('UPDATE organization_invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?').bind(invitation.id).run();
+			}
 		} else {
-			// Update existing user's tokens
+			if (user.is_active === 0) throw error(403, 'Your account has been deactivated.');
+			const membership = await db.prepare(
+				' SELECT id FROM organization_members WHERE user_id = ? AND is_active = 1 LIMIT 1'
+			).bind(user.id).first();
+			if (!membership) throw error(403, 'You do not have an active organization membership.');
+
 			await db
 				.prepare(
 					`UPDATE users
 					SET google_refresh_token = COALESCE(?, google_refresh_token),
 						email = ?,
-						name = ?
+						name = ?,
+						last_login_at = CURRENT_TIMESTAMP
 					WHERE id = ?`
 				)
 				.bind(
 					tokens.refresh_token || null,
-					userInfo.email,
+					normalizedEmail,
 					userInfo.name,
 					user.id
 				)
@@ -117,7 +150,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 		throw redirect(302, '/dashboard');
 	} catch (err: any) {
 		// Re-throw redirects
-		if (err?.status && err?.location) {
+		if (err?.status && (err?.location || err?.status >= 400)) {
 			throw err;
 		}
 		console.error('OAuth callback error:', err);

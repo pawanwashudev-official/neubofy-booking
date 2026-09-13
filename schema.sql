@@ -1,3 +1,18 @@
+-- Organizations table
+CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    profile_image TEXT,
+    brand_color TEXT DEFAULT '#3b82f6',
+    timezone TEXT DEFAULT 'UTC',
+    contact_email TEXT,
+    reply_to_email TEXT,
+    settings JSON DEFAULT '{}',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -13,16 +28,53 @@ CREATE TABLE IF NOT EXISTS users (
     settings JSON DEFAULT '{}',
     profile_image TEXT,
     brand_color TEXT DEFAULT '#3b82f6',
-    contact_email TEXT
+    contact_email TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    last_login_at DATETIME
 );
 
 CREATE INDEX idx_users_slug ON users(slug);
 CREATE INDEX idx_users_email ON users(email);
 
+-- Organization memberships and invitation-only access
+CREATE TABLE IF NOT EXISTS organization_members (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    organization_id TEXT,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
+    is_active BOOLEAN DEFAULT 1,
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(organization_id, user_id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_org_members_user ON organization_members(user_id);
+CREATE INDEX idx_org_members_org ON organization_members(organization_id, is_active);
+
+CREATE TABLE IF NOT EXISTS organization_invitations (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    organization_id TEXT,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    invited_by TEXT NOT NULL,
+    token_digest TEXT UNIQUE NOT NULL,
+    expires_at DATETIME NOT NULL,
+    accepted_at DATETIME,
+    revoked_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (invited_by) REFERENCES users(id)
+);
+
+CREATE INDEX idx_org_invitations_email ON organization_invitations(organization_id, email, expires_at);
+CREATE INDEX idx_org_invitations_token ON organization_invitations(token_digest);
+
 -- Event types (different meeting types a user can offer)
 CREATE TABLE IF NOT EXISTS event_types (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
+    organization_id TEXT,
     name TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL DEFAULT 30,
     buffer_minutes INTEGER DEFAULT 0,
@@ -47,6 +99,7 @@ CREATE INDEX idx_event_types_active ON event_types(user_id, is_active);
 CREATE TABLE IF NOT EXISTS availability_rules (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
+    organization_id TEXT,
     event_type_id TEXT, -- NULL means applies to all event types
     day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0 = Sunday
     start_time TIME NOT NULL,
@@ -64,6 +117,7 @@ CREATE INDEX idx_availability_rules_active ON availability_rules(user_id, is_act
 CREATE TABLE IF NOT EXISTS availability_overrides (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
+    organization_id TEXT,
     date DATE NOT NULL,
     available BOOLEAN NOT NULL, -- false = blocked, true = override with specific times
     start_time TIME,
@@ -79,6 +133,7 @@ CREATE INDEX idx_availability_overrides_user_date ON availability_overrides(user
 CREATE TABLE IF NOT EXISTS bookings (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     event_type_id TEXT NOT NULL,
+    organization_id TEXT,
     user_id TEXT NOT NULL,
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
@@ -154,6 +209,7 @@ CREATE INDEX idx_webhooks_user ON webhooks(user_id);
 CREATE TABLE IF NOT EXISTS email_templates (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
+    organization_id TEXT,
     template_type TEXT NOT NULL CHECK (template_type IN ('confirmation', 'cancellation', 'reschedule', 'reminder_24h', 'reminder_1h', 'reminder_30m')),
     is_enabled BOOLEAN DEFAULT 1,
     subject TEXT,
