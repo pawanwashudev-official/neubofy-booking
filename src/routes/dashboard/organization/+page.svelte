@@ -3,15 +3,16 @@
 	import { goto } from '$app/navigation';
 
 	let { data }: { data: PageData } = $props();
-	const organization = data.organization as Record<string, string | number | null>;
-	let name = $state(String(organization?.name || 'Neubofy'));
+	const organization = (data.organization as Record<string, string | number | null>) || {};
+
+	let name = $state(String(organization?.name || 'Neubofy™'));
 	let slug = $state(String(organization?.slug || 'neubofy'));
-	let profileImage = $state(String(organization?.profile_image || ''));
-	let brandColor = $state(String(organization?.brand_color || '#2563eb'));
-	let timezone = $state(String(organization?.timezone || 'UTC'));
-	let contactEmail = $state(String(organization?.contact_email || ''));
-	let replyToEmail = $state(String(organization?.reply_to_email || ''));
-	let emailFrom = $state(String(organization?.email_from || ''));
+	let profileImage = $state(String(organization?.profile_image || 'https://neubofy.in/neubofylogo.png'));
+	let brandColor = $state(String(organization?.brand_color || '#3b82f6'));
+	let timezone = $state(String(organization?.timezone || 'Asia/Kolkata'));
+	let contactEmail = $state(String(organization?.contact_email || 'contact@neubofy.in'));
+	let replyToEmail = $state(String(organization?.reply_to_email || 'meet@neubofy.in'));
+	let emailFrom = $state(String(organization?.email_from || 'booking@updates.neubofy.in'));
 	let saving = $state(false);
 	let message = $state('');
 	let errorMessage = $state('');
@@ -20,45 +21,163 @@
 		saving = true;
 		message = '';
 		errorMessage = '';
-		const response = await fetch('/api/organization', {
-			method: 'PUT', headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name, slug, profileImage, brandColor, timezone, contactEmail, replyToEmail, emailFrom })
-		});
-		if (!response.ok) {
-			errorMessage = ((await response.json().catch(() => ({}))) as { message?: string }).message || 'Unable to save organization settings';
-		} else {
-			message = 'Organization settings saved.';
-			setTimeout(() => goto('/dashboard'), 600);
+		try {
+			const response = await fetch('/api/organization', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, slug, profileImage, brandColor, timezone, contactEmail, replyToEmail, emailFrom })
+			});
+			if (!response.ok) {
+				const json = await response.json().catch(() => ({}));
+				throw new Error(json.message || 'Unable to save organization settings');
+			}
+			message = 'Organization settings saved successfully.';
+			setTimeout(() => (message = ''), 4000);
+		} catch (err: any) {
+			errorMessage = err.message || 'Error updating organization settings.';
+		} finally {
+			saving = false;
 		}
-		saving = false;
 	}
 </script>
 
-<svelte:head><title>Organization setup | Neubofy</title></svelte:head>
+<svelte:head>
+	<title>Organization Settings | Neubofy™</title>
+</svelte:head>
 
-<div class="min-h-screen bg-slate-50">
-	<header class="border-b border-slate-200 bg-white">
-		<div class="mx-auto flex max-w-4xl items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
-			<a href="/dashboard" class="text-sm font-medium text-slate-600 hover:text-slate-900">Back</a>
-			<div><p class="text-xs font-semibold uppercase tracking-wider text-blue-600">Neubofy</p><h1 class="text-xl font-bold text-slate-900">Organization setup</h1></div>
+<div class="p-6 sm:p-10 max-w-4xl mx-auto space-y-8 animate-fade-in">
+	<div>
+		<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Organization Settings</h1>
+		<p class="text-sm text-zinc-400 mt-1">
+			Manage branding, public domain slug, notification emails, and consultation defaults.
+		</p>
+	</div>
+
+	{#if message}
+		<div class="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+			✓ {message}
 		</div>
-	</header>
-	<main class="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
-		<div class="mb-6 max-w-2xl"><h2 class="text-2xl font-bold text-slate-950">Make your booking portal yours</h2><p class="mt-2 text-sm leading-6 text-slate-600">These settings control the public booking page and every automated email. You can change them later from this page.</p></div>
-		{#if errorMessage}<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{errorMessage}</div>{/if}
-		{#if message}<div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div>{/if}
-		<form onsubmit={(event) => { event.preventDefault(); save(); }} class="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-			<div class="grid gap-5 sm:grid-cols-2">
-				<label class="block text-sm font-medium text-slate-700">Organization name<input bind:value={name} required class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /></label>
-				<label class="block text-sm font-medium text-slate-700">Public URL slug<input bind:value={slug} required pattern="[a-z0-9-]+" class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /><span class="mt-1 block text-xs font-normal text-slate-500">Your public page uses /{slug}</span></label>
-				<label class="block text-sm font-medium text-slate-700">Contact email<input type="email" bind:value={contactEmail} required class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /></label>
-				<label class="block text-sm font-medium text-slate-700">Sender email<input type="email" bind:value={emailFrom} required class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /><span class="mt-1 block text-xs font-normal text-slate-500">Must be approved by your email provider.</span></label>
-				<label class="block text-sm font-medium text-slate-700">Reply-to email<input type="email" bind:value={replyToEmail} required class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /></label>
-				<label class="block text-sm font-medium text-slate-700">Timezone<input bind:value={timezone} required class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /></label>
+	{/if}
+	{#if errorMessage}
+		<div class="p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold">
+			✕ {errorMessage}
+		</div>
+	{/if}
+
+	<form onsubmit={(e) => { e.preventDefault(); save(); }} class="glass-card rounded-2xl p-6 sm:p-8 border border-white/10 space-y-6">
+		<h2 class="text-base font-bold text-white">General & Branding</h2>
+
+		<div class="grid gap-5 sm:grid-cols-2">
+			<div>
+				<label for="org-name" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Organization Name
+				</label>
+				<input
+					id="org-name"
+					bind:value={name}
+					required
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
 			</div>
-			<label class="block text-sm font-medium text-slate-700">Logo URL<input bind:value={profileImage} placeholder="https://..." class="mt-2 w-full rounded-lg border-slate-300 px-3 py-2.5" /></label>
-			<div class="flex flex-wrap items-center gap-4"><label class="text-sm font-medium text-slate-700">Brand color<input type="color" bind:value={brandColor} class="ml-3 h-10 w-14 rounded border border-slate-300" /></label><span class="text-sm text-slate-500">Used on your booking page and email buttons</span></div>
-			<div class="flex justify-end"><button disabled={saving} class="w-full rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 sm:w-auto">{saving ? 'Saving...' : 'Save organization setup'}</button></div>
-		</form>
-	</main>
+
+			<div>
+				<label for="org-slug" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Public Portal Slug
+				</label>
+				<input
+					id="org-slug"
+					bind:value={slug}
+					required
+					pattern="[a-z0-9-]+"
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="contact-email" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Contact / Support Email
+				</label>
+				<input
+					id="contact-email"
+					type="email"
+					bind:value={contactEmail}
+					required
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="sender-email" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Sender Email (Automations)
+				</label>
+				<input
+					id="sender-email"
+					type="email"
+					bind:value={emailFrom}
+					required
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="replyto-email" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Reply-To Email
+				</label>
+				<input
+					id="replyto-email"
+					type="email"
+					bind:value={replyToEmail}
+					required
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
+			</div>
+
+			<div>
+				<label for="org-timezone" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+					Default Timezone
+				</label>
+				<input
+					id="org-timezone"
+					bind:value={timezone}
+					required
+					class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-blue-500"
+				/>
+			</div>
+		</div>
+
+		<div>
+			<label for="logo-url" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+				Public Logo Image URL
+			</label>
+			<input
+				id="logo-url"
+				bind:value={profileImage}
+				placeholder="https://neubofy.in/neubofylogo.png"
+				class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
+			/>
+		</div>
+
+		<div class="flex items-center gap-4 pt-2">
+			<label for="brand-color" class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+				Brand Accent Color:
+			</label>
+			<input
+				id="brand-color"
+				type="color"
+				bind:value={brandColor}
+				class="h-9 w-14 rounded-lg bg-transparent border border-white/20 cursor-pointer"
+			/>
+			<span class="text-xs text-zinc-500">Used for accent glows and badges across the portal.</span>
+		</div>
+
+		<div class="flex justify-end pt-4 border-t border-white/10">
+			<button
+				type="submit"
+				disabled={saving}
+				class="btn-electric px-8 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-50"
+			>
+				{saving ? 'Saving...' : 'Save Organization Settings'}
+			</button>
+		</div>
+	</form>
 </div>

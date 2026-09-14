@@ -1,7 +1,7 @@
 /**
  * Availability API endpoint
- * Returns available time slots based on:
- * 1. User's availability rules (weekly schedule)
+ * Returns available time slots for a specific expert and consultation service based on:
+ * 1. Expert's availability rules (weekly schedule)
  * 2. Google Calendar busy times
  * 3. Outlook Calendar busy times
  * 4. Existing bookings
@@ -25,33 +25,72 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const eventSlug = url.searchParams.get('event');
 	const date = url.searchParams.get('date'); // YYYY-MM-DD
+	const expertId = url.searchParams.get('expertId') || url.searchParams.get('expert');
+	const durationParam = url.searchParams.get('duration');
 
 	if (!eventSlug || !date) {
-		throw error(400, 'Missing required parameters');
+		throw error(400, 'Missing required parameters: event and date');
 	}
 
 	try {
 		const db = env.DB;
 
-		// Check cache first to avoid expensive DB/API calls
-		const cacheKey = `availability:${eventSlug}:${date}`;
-		const cached = await env.KV.get(cacheKey);
-		if (cached) {
-			return json(JSON.parse(cached));
+		// 1. Fetch consultation event type
+		const eventType = await db
+			.prepare(
+				`SELECT id, user_id, duration_minutes as duration, availability_calendars 
+				 FROM event_types 
+				 WHERE slug = ? AND is_active = 1 LIMIT 1`
+			)
+			.bind(eventSlug)
+			.first<{ id: string; user_id: string | null; duration: number; availability_calendars: string | null }>();
+
+		if (!eventType) {
+			throw error(404, 'Consultation service not found or inactive');
 		}
 
-		// Get the first (and only) user for single-user setup
+		// 2. Resolve target expert user
+		let targetUserId = expertId;
+		if (!targetUserId) {
+			// Find assigned member
+			const assigned = await db
+				.prepare('SELECT user_id FROM event_type_members WHERE event_type_id = ? AND is_active = 1 LIMIT 1')
+				.bind(eventType.id)
+				.first<{ user_id: string }>();
+			targetUserId = assigned?.user_id || eventType.user_id || undefined;
+		}
+
+		let userQuery = 'SELECT id, slug, timezone, settings FROM users WHERE is_active = 1';
+		const params: any[] = [];
+		if (targetUserId) {
+			userQuery += ' AND (id = ? OR slug = ?)';
+			params.push(targetUserId, targetUserId);
+		}
+		userQuery += ' LIMIT 1';
+
 		const user = await db
-			.prepare('SELECT id, slug, timezone, settings FROM users LIMIT 1')
+			.prepare(userQuery)
+			.bind(...params)
 			.first<{ id: string; slug: string; timezone: string | null; settings: string | null }>();
 
 		if (!user) {
-			throw error(404, 'User not found');
+			throw error(404, 'Consultant not found');
 		}
 
-		const userTimezone = user.timezone || 'UTC';
+		// Selected duration
+		const sessionDuration = durationParam ? parseInt(durationParam, 10) : (eventType.duration || 30);
 
-		// Parse user settings for global calendar defaults
+		// Cache check
+		const cacheKey = `availability:${eventSlug}:${user.id}:${sessionDuration}:${date}`;
+		try {
+			const cached = await env.KV?.get(cacheKey);
+			if (cached) {
+				return json(JSON.parse(cached));
+			}
+		} catch {}
+
+		const userTimezone = user.timezone || 'Asia/Kolkata';
+
 		let userSettings: { defaultAvailabilityCalendars?: string; selectedGoogleCalendars?: string[] } = {};
 		try {
 			userSettings = user.settings ? JSON.parse(user.settings) : {};
@@ -59,40 +98,54 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			userSettings = {};
 		}
 
-		const eventType = await db
-			.prepare('SELECT id, duration_minutes as duration, availability_calendars FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1')
-			.bind(user.id, eventSlug)
-			.first<{ id: string; duration: number; availability_calendars: string | null }>();
-
-		if (!eventType) {
-			throw error(404, 'Event type not found or inactive');
-		}
-
-		// Get calendar settings: use event type override if set, otherwise use global settings
-		const availabilityCalendars = eventType.availability_calendars || userSettings.defaultAvailabilityCalendars || 'both';
+		const availabilityCalendars = eventType.availability_calendars || userSettings.defaultAvailabilityCalendars || 'google';
 		const useGoogleCalendar = availabilityCalendars === 'google' || availabilityCalendars === 'both';
 		const useOutlookCalendar = availabilityCalendars === 'outlook' || availabilityCalendars === 'both';
 
-		// Parse date
 		const requestedDate = new Date(date);
 		const dayOfWeek = requestedDate.getDay();
 
-		// Get availability rules for this day
-		const availabilityRules = await db
+		// Query expert's availability rules for this day of week
+		let availabilityRules = await db
 			.prepare(
 				`SELECT start_time, end_time
-				FROM availability_rules
-				WHERE user_id = ? AND day_of_week = ?
-				ORDER BY start_time`
+				 FROM availability_rules
+				 WHERE user_id = ? AND day_of_week = ? AND is_active = 1
+				 ORDER BY start_time`
 			)
 			.bind(user.id, dayOfWeek)
 			.all<{ start_time: string; end_time: string }>();
 
-		if (!availabilityRules.results || availabilityRules.results.length === 0) {
+		// Fallback business hours (Mon-Sat 10:00 - 18:00) if expert has not yet set custom rules
+		let activeRules = availabilityRules.results || [];
+		if (activeRules.length === 0 && dayOfWeek !== 0) {
+			activeRules = [{ start_time: '10:00', end_time: '18:00' }];
+		}
+
+		if (activeRules.length === 0) {
 			return json({ slots: [] });
 		}
 
-		// Get busy times from connected calendars
+		// Date overrides check (e.g. holidays or leaves)
+		const override = await db
+			.prepare(
+				`SELECT available, start_time, end_time 
+				 FROM availability_overrides 
+				 WHERE user_id = ? AND date = ? LIMIT 1`
+			)
+			.bind(user.id, date)
+			.first<{ available: number; start_time: string | null; end_time: string | null }>();
+
+		if (override) {
+			if (!override.available) {
+				return json({ slots: [] });
+			}
+			if (override.start_time && override.end_time) {
+				activeRules = [{ start_time: override.start_time, end_time: override.end_time }];
+			}
+		}
+
+		// Query busy times
 		const startOfDay = new Date(requestedDate);
 		startOfDay.setHours(0, 0, 0, 0);
 		const endOfDay = new Date(requestedDate);
@@ -100,7 +153,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 		let busySlots: TimeSlot[] = [];
 
-		// Fetch Google Calendar busy times (if enabled in settings)
 		if (useGoogleCalendar) {
 			try {
 				const accessToken = await getValidAccessToken(
@@ -109,17 +161,13 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 					env.GOOGLE_CLIENT_ID,
 					env.GOOGLE_CLIENT_SECRET
 				);
-				// Use selected calendars if configured, otherwise query all
-				const selectedCalendars = userSettings.selectedGoogleCalendars;
-				const googleBusy = await getBusyTimes(accessToken, startOfDay, endOfDay, selectedCalendars);
+				const googleBusy = await getBusyTimes(accessToken, startOfDay, endOfDay, userSettings.selectedGoogleCalendars);
 				busySlots.push(...googleBusy);
 			} catch (err) {
-				console.error('Error fetching Google Calendar busy times:', err);
-				// Continue without Google Calendar data if there's an error
+				// Continue if calendar not connected yet
 			}
 		}
 
-		// Fetch Outlook Calendar busy times (if configured, connected, and enabled in settings)
 		if (useOutlookCalendar && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
 			try {
 				const outlookToken = await getValidOutlookAccessToken(
@@ -130,47 +178,29 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 				);
 				const outlookBusy = await getOutlookBusyTimes(outlookToken, startOfDay, endOfDay);
 				busySlots.push(...outlookBusy);
-			} catch (err) {
-				// User may not have Outlook connected - that's fine
-				console.error('Error fetching Outlook Calendar busy times:', err);
-			}
+			} catch {}
 		}
 
-		// Get existing bookings for this date
+		// Query existing confirmed bookings for this expert
 		const bookings = await db
 			.prepare(
 				`SELECT start_time, end_time
-				FROM bookings
-				WHERE user_id = ? AND DATE(start_time) = ? AND status = 'confirmed'
-				ORDER BY start_time`
+				 FROM bookings
+				 WHERE user_id = ? AND DATE(start_time) = ? AND status = 'confirmed'
+				 ORDER BY start_time`
 			)
 			.bind(user.id, date)
 			.all<{ start_time: string; end_time: string }>();
 
-		// Combine busy slots from Google Calendar and bookings
 		const allBusySlots = [
-			...busySlots.map(slot => ({
-				start: slot.start,
-				end: slot.end
-			})),
-			...bookings.results.map(booking => ({
-				start: booking.start_time,
-				end: booking.end_time
-			}))
+			...busySlots.map((slot) => ({ start: slot.start, end: slot.end })),
+			...(bookings.results || []).map((b) => ({ start: b.start_time, end: b.end_time }))
 		];
 
-		// Generate available slots
-		const slots: TimeSlot[] = [];
-
-		// Helper to create a Date in user's timezone
-		// Takes a date string (YYYY-MM-DD) and time string (HH:MM) in user's timezone
-		// and returns a UTC Date
 		function createDateInTimezone(dateStr: string, timeStr: string, timezone: string): Date {
 			const [hour, minute] = timeStr.split(':').map(Number);
-			// Create a date string that represents the time in the user's timezone
 			const dateTimeStr = `${dateStr}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
 
-			// Format the date in the target timezone to get the offset
 			const formatter = new Intl.DateTimeFormat('en-US', {
 				timeZone: timezone,
 				year: 'numeric',
@@ -182,60 +212,49 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 				hour12: false
 			});
 
-			// Parse the target date/time and find the UTC equivalent
-			// We need to find what UTC time corresponds to this local time
-			const targetDate = new Date(dateTimeStr + 'Z'); // Start with UTC interpretation
-			const utcStr = targetDate.toISOString();
-
-			// Get what time it would be in the user's timezone if we used this UTC time
+			const targetDate = new Date(dateTimeStr + 'Z');
 			const parts = formatter.formatToParts(targetDate);
-			const tzHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
-			const tzMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+			const tzHour = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
+			const tzMinute = parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10);
 
-			// Calculate the offset in minutes
 			const targetMinutes = hour * 60 + minute;
 			const actualMinutes = tzHour * 60 + tzMinute;
 			let offsetMinutes = actualMinutes - targetMinutes;
 
-			// Handle day boundary crossing
 			if (offsetMinutes > 12 * 60) offsetMinutes -= 24 * 60;
 			if (offsetMinutes < -12 * 60) offsetMinutes += 24 * 60;
 
-			// Adjust to get the correct UTC time
 			return new Date(targetDate.getTime() - offsetMinutes * 60 * 1000);
 		}
 
-		for (const rule of availabilityRules.results) {
-			// Create start and end times in user's timezone, converted to UTC
+		const slots: TimeSlot[] = [];
+		const slotIncrement = Math.min(30, sessionDuration);
+
+		for (const rule of activeRules) {
 			let currentTime = createDateInTimezone(date, rule.start_time, userTimezone);
 			const endTime = createDateInTimezone(date, rule.end_time, userTimezone);
 
-			// Generate slots every 30 minutes (or event duration, whichever is smaller)
-			const slotIncrement = Math.min(30, eventType.duration);
-
 			while (currentTime < endTime) {
 				const slotEnd = new Date(currentTime);
-				slotEnd.setMinutes(slotEnd.getMinutes() + eventType.duration);
+				slotEnd.setMinutes(slotEnd.getMinutes() + sessionDuration);
 
-				// Check if slot end is within availability window
-				if (slotEnd > endTime) {
-					break;
-				}
+				if (slotEnd > endTime) break;
 
-				// Check if slot is in the past
-				if (currentTime < new Date()) {
+				// Skip past slots
+				if (currentTime.getTime() <= Date.now() + 15 * 60 * 1000) {
 					currentTime.setMinutes(currentTime.getMinutes() + slotIncrement);
 					continue;
 				}
 
-				// Check if slot conflicts with any busy time
-				const hasConflict = allBusySlots.some(busy => {
-					const busyStart = new Date(busy.start);
-					const busyEnd = new Date(busy.end);
+				const hasConflict = allBusySlots.some((busy) => {
+					const busyStart = new Date(busy.start).getTime();
+					const busyEnd = new Date(busy.end).getTime();
+					const curStart = currentTime.getTime();
+					const curEnd = slotEnd.getTime();
 					return (
-						(currentTime >= busyStart && currentTime < busyEnd) ||
-						(slotEnd > busyStart && slotEnd <= busyEnd) ||
-						(currentTime <= busyStart && slotEnd >= busyEnd)
+						(curStart >= busyStart && curStart < busyEnd) ||
+						(curEnd > busyStart && curEnd <= busyEnd) ||
+						(curStart <= busyStart && curEnd >= busyEnd)
 					);
 				});
 
@@ -250,13 +269,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			}
 		}
 
-		// Cache response in KV for 5 minutes
-		await env.KV.put(cacheKey, JSON.stringify({ slots }), { expirationTtl: 300 });
+		try {
+			await env.KV?.put(cacheKey, JSON.stringify({ slots }), { expirationTtl: 180 });
+		} catch {}
 
-		return json({ slots });
+		return json({ slots, timezone: userTimezone });
 	} catch (err: any) {
 		console.error('Availability API error:', err);
-		if (err?.status) throw err; // Re-throw SvelteKit errors
-		throw error(500, 'Failed to fetch availability');
+		if (err?.status) throw err;
+		throw error(500, 'Failed to fetch consultant availability');
 	}
 };
