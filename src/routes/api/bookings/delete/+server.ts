@@ -1,5 +1,5 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
-import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
+import { getAuthContext, isOrganizationOwner } from '$lib/server/auth';
 
 export const DELETE = async (event: RequestEvent) => {
 	const auth = await getAuthContext(event);
@@ -14,7 +14,7 @@ export const DELETE = async (event: RequestEvent) => {
 		 FROM bookings WHERE id = ? AND organization_id = ?`
 	).bind(body.bookingId, auth.organizationId).first<{ id: string; user_id: string; attendee_name: string; status: string; end_time: string }>();
 	if (!booking) throw error(404, 'Booking not found');
-	if (booking.user_id !== auth.userId && !isOrganizationAdmin(auth.role)) {
+	if (booking.user_id !== auth.userId && !isOrganizationOwner(auth.role)) {
 		throw error(403, 'You do not have permission to delete this booking');
 	}
 	if (booking.status === 'confirmed' && new Date(booking.end_time).getTime() > Date.now()) {
