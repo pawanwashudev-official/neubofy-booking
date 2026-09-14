@@ -15,31 +15,27 @@ export const load: PageServerLoad = async (event) => {
 		return { profile: null };
 	}
 
-	const profile = await db
-		.prepare(
-			`SELECT id, name, email, slug, profile_image, brand_color, contact_email,
-			        role_title, bio, phone, session_pricing, is_free_consultation,
-			        google_refresh_token, outlook_refresh_token, timezone
-			 FROM users WHERE id = ?`
-		)
-		.bind(userId)
-		.first<{
-			id: string;
-			name: string;
-			email: string;
-			slug: string;
-			profile_image: string | null;
-			brand_color: string | null;
-			contact_email: string | null;
-			role_title: string | null;
-			bio: string | null;
-			phone: string | null;
-			session_pricing: string | null;
-			is_free_consultation: number | null;
-			google_refresh_token: string | null;
-			outlook_refresh_token: string | null;
-			timezone: string | null;
-		}>();
+	let profile: any = null;
+	try {
+		profile = await db
+			.prepare(
+				`SELECT id, name, email, slug, profile_image, brand_color, contact_email,
+				        role_title, bio, phone, session_pricing, is_free_consultation,
+				        google_refresh_token, outlook_refresh_token, timezone
+				 FROM users WHERE id = ?`
+			)
+			.bind(userId)
+			.first();
+	} catch (e1) {
+		try {
+			profile = await db
+				.prepare('SELECT id, name, email, slug, profile_image, brand_color, contact_email, google_refresh_token, timezone FROM users WHERE id = ?')
+				.bind(userId)
+				.first();
+		} catch (e2) {
+			console.error('Failed to query user in profile page:', e2);
+		}
+	}
 
 	let parsedPricing = [];
 	try {

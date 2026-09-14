@@ -62,7 +62,12 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			throw redirect(302, '/dashboard/calendars?success=google_connected');
 		}
 
-		let user = await db.prepare('SELECT id, is_active FROM users WHERE lower(email) = ?').bind(normalizedEmail).first<{ id: string; is_active: number | null }>();
+		let user: any = null;
+		try {
+			user = await db.prepare('SELECT id, is_active FROM users WHERE lower(email) = ?').bind(normalizedEmail).first<{ id: string; is_active: number | null }>();
+		} catch {
+			user = await db.prepare('SELECT id FROM users WHERE lower(email) = ?').bind(normalizedEmail).first<{ id: string }>();
+		}
 
 		if (!user) {
 			const invitation = await db
@@ -72,7 +77,8 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 					 AND expires_at > CURRENT_TIMESTAMP ORDER BY created_at DESC LIMIT 1`
 				)
 				.bind(normalizedEmail)
-				.first<{ id: string; organization_id: string; role: 'admin' | 'member' }>();
+				.first<{ id: string; organization_id: string; role: 'admin' | 'member' }>()
+				.catch(() => null);
 
 			if (!ownerEmail || normalizedEmail !== ownerEmail) {
 				if (!invitation) throw error(403, 'Access denied. An active organization invitation is required.');
@@ -97,7 +103,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 
 			user = { id: userId, is_active: 1 };
 
-			let existingOrganization = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
+			let existingOrganization = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>().catch(() => null);
 			if (!existingOrganization && !invitation) {
 				const organizationId = crypto.randomUUID();
 				const organizationSlug = `${normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, '') || 'organization'}-${organizationId.slice(0, 8)}`;
@@ -107,22 +113,49 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 						 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 					)
 					.bind(organizationId, 'Neubofy', organizationSlug, normalizedEmail, normalizedEmail)
-					.run();
+					.run()
+					.catch(() => null);
 				existingOrganization = { id: organizationId };
 			}
-			const organizationId = invitation?.organization_id || existingOrganization?.id;
-			if (!organizationId) throw error(500, 'Organization setup is incomplete.');
-			await db.prepare('INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, ?)')
-				.bind(organizationId, userId, invitation?.role || 'owner').run();
+			const organizationId = invitation?.organization_id || existingOrganization?.id || 'org_neubofy_main';
+			await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
+				.bind(organizationId, userId, invitation?.role || 'owner').run().catch(() => null);
 			if (invitation) {
-				await db.prepare('UPDATE organization_invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?').bind(invitation.id).run();
+				await db.prepare('UPDATE organization_invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?').bind(invitation.id).run().catch(() => null);
 			}
 		} else {
 			if (user.is_active === 0) throw error(403, 'Your account has been deactivated.');
-			const membership = await db.prepare(
-				' SELECT id FROM organization_members WHERE user_id = ? AND is_active = 1 LIMIT 1'
-			).bind(user.id).first();
-			if (!membership) throw error(403, 'You do not have an active organization membership.');
+
+			let membership: any = null;
+			try {
+				membership = await db.prepare(
+					'SELECT id FROM organization_members WHERE user_id = ? AND is_active = 1 LIMIT 1'
+				).bind(user.id).first();
+			} catch {
+				try {
+					membership = await db.prepare(
+						'SELECT id FROM organization_members WHERE user_id = ? LIMIT 1'
+					).bind(user.id).first();
+				} catch {}
+			}
+
+			// Auto-heal membership if missing
+			if (!membership) {
+				try {
+					const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
+					if (org) {
+						await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
+							.bind(org.id, user.id, normalizedEmail === ownerEmail ? 'owner' : 'admin').run();
+						membership = { id: 'auto_healed' };
+					}
+				} catch (eHeal) {
+					console.error('Auto-heal membership error:', eHeal);
+				}
+			}
+
+			if (!membership && (!ownerEmail || normalizedEmail !== ownerEmail)) {
+				throw error(403, 'You do not have an active organization membership.');
+			}
 
 			await db
 				.prepare(

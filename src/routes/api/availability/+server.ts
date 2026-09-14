@@ -52,35 +52,44 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		// 2. Resolve target expert user deterministically
 		let targetUserId: string | null = expertId;
 		if (!targetUserId) {
-			const assigned = await db
-				.prepare(
-					`SELECT etm.user_id 
-					 FROM event_type_members etm
-					 JOIN users u ON u.id = etm.user_id
-					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
-					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
-					 LIMIT 1`
-				)
-				.bind(eventType.id, eventType.user_id || '')
-				.first<{ user_id: string }>();
+			try {
+				const assigned = await db
+					.prepare(
+						`SELECT etm.user_id 
+						 FROM event_type_members etm
+						 JOIN users u ON u.id = etm.user_id
+						 WHERE etm.event_type_id = ? AND etm.is_active = 1
+						 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
+						 LIMIT 1`
+					)
+					.bind(eventType.id, eventType.user_id || '')
+					.first<{ user_id: string }>();
 
-			targetUserId = assigned?.user_id || eventType.user_id || null;
+				targetUserId = assigned?.user_id || eventType.user_id || null;
+			} catch (eAssigned) {
+				targetUserId = eventType.user_id || null;
+			}
 		}
 
-		let userQuery = 'SELECT id, slug, timezone, settings FROM users WHERE is_active = 1';
+		let user: any = null;
 		const params: any[] = [];
 		if (targetUserId) {
-			userQuery += ' AND (id = ? OR slug = ?)';
 			params.push(targetUserId, targetUserId);
-		} else {
-			userQuery += ' ORDER BY created_at ASC';
 		}
-		userQuery += ' LIMIT 1';
 
-		const user = await db
-			.prepare(userQuery)
-			.bind(...params)
-			.first<{ id: string; slug: string; timezone: string | null; settings: string | null }>();
+		try {
+			let userQuery = 'SELECT id, slug, timezone, settings FROM users';
+			if (targetUserId) {
+				userQuery += ' WHERE id = ? OR slug = ?';
+			} else {
+				userQuery += ' ORDER BY created_at ASC';
+			}
+			userQuery += ' LIMIT 1';
+
+			user = await db.prepare(userQuery).bind(...params).first();
+		} catch (eUser) {
+			console.error('Failed to query user in slot availability:', eUser);
+		}
 
 		if (!user) {
 			throw error(404, 'Consultant not found');

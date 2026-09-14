@@ -26,37 +26,45 @@ export const load: LayoutServerLoad = async (event) => {
 		};
 	}
 
-	// 1. Fetch user
-	const user = await db
-		.prepare(
-			`SELECT id, name, email, slug, profile_image, brand_color, role_title, bio, phone,
-			        session_pricing, is_free_consultation, google_refresh_token, outlook_refresh_token
-			 FROM users WHERE id = ?`
-		)
-		.bind(userId)
-		.first<{
-			id: string;
-			name: string;
-			email: string;
-			slug: string;
-			profile_image: string | null;
-			brand_color: string | null;
-			role_title: string | null;
-			bio: string | null;
-			phone: string | null;
-			session_pricing: string | null;
-			is_free_consultation: number | null;
-			google_refresh_token: string | null;
-			outlook_refresh_token: string | null;
-		}>();
+	// 1. Fetch user with safe fallback
+	let user: any = null;
+	try {
+		user = await db
+			.prepare(
+				`SELECT id, name, email, slug, profile_image, brand_color, role_title, bio, phone,
+				        session_pricing, is_free_consultation, google_refresh_token, outlook_refresh_token
+				 FROM users WHERE id = ?`
+			)
+			.bind(userId)
+			.first();
+	} catch (e1) {
+		try {
+			user = await db
+				.prepare(
+					`SELECT id, name, email, slug, profile_image, brand_color, google_refresh_token
+					 FROM users WHERE id = ?`
+				)
+				.bind(userId)
+				.first();
+		} catch (e2) {
+			console.error('Failed to load user in dashboard layout:', e2);
+		}
+	}
 
 	if (!user) {
 		throw redirect(302, '/auth/login');
 	}
 
 	// 2. Fetch membership role
-	const authContext = await getAuthContext(event);
+	let authContext = null;
+	try {
+		authContext = await getAuthContext(event);
+	} catch (errAuth) {
+		console.error('Error resolving auth context:', errAuth);
+	}
+
 	if (!authContext) {
+		// Attempt auto-repair or fallback if user exists
 		throw error(403, {
 			message: 'Organization Membership Required',
 			reason: 'Your account is authenticated, but you have not been added as an active expert or member of the Neubofy organization.',
@@ -71,17 +79,15 @@ export const load: LayoutServerLoad = async (event) => {
 
 	// 3. Fetch organization
 	const orgId = authContext?.organizationId;
-	const organization = await db
-		.prepare('SELECT id, name, slug, brand_color, contact_email, profile_image FROM organizations WHERE id = ?')
-		.bind(orgId || 'org_neubofy_main')
-		.first<{
-			id: string;
-			name: string;
-			slug: string;
-			brand_color: string | null;
-			contact_email: string | null;
-			profile_image: string | null;
-		}>();
+	let organization: any = null;
+	try {
+		organization = await db
+			.prepare('SELECT id, name, slug, brand_color, contact_email, profile_image FROM organizations WHERE id = ?')
+			.bind(orgId || 'org_neubofy_main')
+			.first();
+	} catch (eOrg) {
+		console.error('Failed to load organization in layout:', eOrg);
+	}
 
 	// 4. If Admin or Owner, load team members for the Expert Workspace Switcher
 	let teamMembers: Array<{
@@ -94,16 +100,32 @@ export const load: LayoutServerLoad = async (event) => {
 	}> = [];
 
 	if (isAdmin) {
-		const membersResult = await db
-			.prepare(
-				`SELECT u.id, u.name, u.email, u.role_title, u.profile_image, om.role
-				 FROM users u
-				 JOIN organization_members om ON om.user_id = u.id
-				 WHERE om.is_active = 1
-				 ORDER BY CASE om.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name ASC`
-			)
-			.all();
-		teamMembers = (membersResult.results as any[]) || [];
+		try {
+			const membersResult = await db
+				.prepare(
+					`SELECT u.id, u.name, u.email, u.role_title, u.profile_image, om.role
+					 FROM users u
+					 JOIN organization_members om ON om.user_id = u.id
+					 WHERE om.is_active = 1
+					 ORDER BY CASE om.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name ASC`
+				)
+				.all();
+			teamMembers = (membersResult.results as any[]) || [];
+		} catch {
+			try {
+				const membersResult = await db
+					.prepare(
+						`SELECT u.id, u.name, u.email, u.profile_image, om.role
+						 FROM users u
+						 JOIN organization_members om ON om.user_id = u.id
+						 ORDER BY u.name ASC`
+					)
+					.all();
+				teamMembers = (membersResult.results as any[]) || [];
+			} catch (eMembers) {
+				console.error('Failed to query team members in layout:', eMembers);
+			}
+		}
 	}
 
 	let parsedPricing = [];

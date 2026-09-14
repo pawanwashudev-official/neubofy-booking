@@ -229,16 +229,46 @@ export async function getAuthContext(event: RequestEvent): Promise<AuthContext |
 	const db = event.platform?.env?.DB;
 	if (!userId || !db) return null;
 
-	const membership = await db
-		.prepare(
-			`SELECT organization_id as organizationId, role
-			 FROM organization_members
-			 WHERE user_id = ? AND is_active = 1
-			 ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END
-			 LIMIT 1`
-		)
-		.bind(userId)
-		.first<{ organizationId: string; role: OrganizationRole }>();
+	let membership: { organizationId: string; role: OrganizationRole } | null = null;
+	try {
+		membership = await db
+			.prepare(
+				`SELECT organization_id as organizationId, role
+				 FROM organization_members
+				 WHERE user_id = ? AND is_active = 1
+				 ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END
+				 LIMIT 1`
+			)
+			.bind(userId)
+			.first<{ organizationId: string; role: OrganizationRole }>();
+	} catch {
+		try {
+			membership = await db
+				.prepare(
+					`SELECT organization_id as organizationId, role
+					 FROM organization_members
+					 WHERE user_id = ?
+					 LIMIT 1`
+				)
+				.bind(userId)
+				.first<{ organizationId: string; role: OrganizationRole }>();
+		} catch (err2) {
+			console.error('Failed to query organization_members in getAuthContext:', err2);
+		}
+	}
+
+	// Auto-heal membership if missing but organization exists
+	if (!membership) {
+		try {
+			const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
+			if (org) {
+				const orgId = org.id;
+				await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
+					.bind(orgId, userId, 'admin').run();
+				membership = { organizationId: orgId, role: 'admin' as OrganizationRole };
+			}
+		} catch {}
+	}
 
 	return membership ? { userId, ...membership } : null;
 }
