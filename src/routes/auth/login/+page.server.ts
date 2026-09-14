@@ -102,7 +102,7 @@ export const actions: Actions = {
 			if (!member) {
 				await db
 					.prepare(
-						`INSERT INTO organization_members (id, organization_id, user_id, role, is_active, created_at)
+						`INSERT INTO organization_members (id, organization_id, user_id, role, is_active, joined_at)
 						 VALUES ('mem_superadmin', ?, ?, 'owner', 1, CURRENT_TIMESTAMP)`
 					)
 					.bind(org.id, userId)

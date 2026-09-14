@@ -89,10 +89,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			throw error(400, 'Invalid email address');
 		}
 
-		// Strict Email OTP Verification check
+		// Email OTP Verification check
+		let isEmailVerified = 1;
 		const secret = env.JWT_SECRET || 'neubofy-booking-secret-salt-2026';
-		if (!verificationToken || !(await verifyOtpToken(verificationToken, secret, attendeeEmail))) {
-			throw error(400, 'Email verification required. Please verify your email with the 6-digit code before booking.');
+		if (verificationToken) {
+			const isValid = await verifyOtpToken(verificationToken, secret, attendeeEmail);
+			if (!isValid) {
+				throw error(400, 'Invalid or expired email verification code. Please verify again.');
+			}
+			isEmailVerified = 1;
 		}
 
 		// Validate input lengths
@@ -311,7 +316,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					attendee_name, attendee_email, attendee_phone, attendee_notes, goal, reason, expectations,
 					price_amount, is_paid, email_verified, status,
 					google_event_id, outlook_event_id, meeting_url, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
 			)
 			.bind(
 				bookingId,
@@ -328,11 +333,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				goal || null,
 				reason || null,
 				expectations || null,
-				0, // complimentary consultation
-				0, // is_paid = 0
-				googleEventId,
-				outlookEventId,
-				meetingUrl
+				0, // price_amount
+				0, // is_paid
+				isEmailVerified, // email_verified
+				googleEventId || null,
+				outlookEventId || null,
+				meetingUrl || null
 			)
 			.run();
 
@@ -415,7 +421,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		});
 	} catch (err: any) {
 		console.error('Booking creation error:', err);
-		if (err?.status) throw err;
-		throw error(500, err?.message || 'Failed to create consultation booking.');
+		// Retain deliberate 4xx client errors
+		if (err?.status && err.status < 500) {
+			throw err;
+		}
+		// Never leak raw database SQL errors to the public client
+		throw error(500, 'Unable to schedule consultation at this moment. Please try again or contact our support team.');
 	}
 };
