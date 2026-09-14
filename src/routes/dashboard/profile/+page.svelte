@@ -16,10 +16,7 @@
 	let sessionTiers = $state<Array<{ duration: number; price: number; label: string }>>(
 		data.profile?.session_pricing && data.profile.session_pricing.length > 0
 			? JSON.parse(JSON.stringify(data.profile.session_pricing))
-			: [
-					{ duration: 30, price: 999, label: '30 Min Strategy Consultation' },
-					{ duration: 60, price: 1999, label: '60 Min Deep Dive' }
-				]
+			: []
 	);
 
 	let saving = $state<boolean>(false);
@@ -28,17 +25,13 @@
 
 	function addTier() {
 		sessionTiers.push({
-			duration: 45,
-			price: 1499,
-			label: '45 Min Custom Advisory'
+			duration: 30,
+			price: 0,
+			label: '30 Min Consultation'
 		});
 	}
 
 	function removeTier(index: number) {
-		if (sessionTiers.length <= 1) {
-			saveError = 'You must have at least one session tier.';
-			return;
-		}
 		sessionTiers.splice(index, 1);
 	}
 

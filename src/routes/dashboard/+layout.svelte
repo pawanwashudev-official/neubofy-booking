@@ -5,7 +5,13 @@
 	let { data, children }: { data: LayoutData; children: any } = $props();
 
 	let mobileMenuOpen = $state<boolean>(false);
-	let selectedViewExpertId = $state<string>(data.user?.id || '');
+	let selectedViewExpertId = $state<string>('');
+
+	$effect(() => {
+		if (data.user?.id && !selectedViewExpertId) {
+			selectedViewExpertId = data.user.id;
+		}
+	});
 
 	// Role titles
 	const roleBadgeLabel = $derived(

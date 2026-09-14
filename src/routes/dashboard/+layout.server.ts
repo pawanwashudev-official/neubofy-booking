@@ -4,7 +4,7 @@
  * and expert members list for the workspace switcher.
  */
 
-import { redirect } from '@sveltejs/kit';
+import { redirect, error } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { getAuthContext, isOrganizationAdmin, getCurrentUser } from '$lib/server/auth';
 
@@ -55,7 +55,16 @@ export const load: LayoutServerLoad = async (event) => {
 
 	// 2. Fetch membership role
 	const authContext = await getAuthContext(event);
-	const role = authContext?.role || 'member';
+	if (!authContext) {
+		throw error(403, {
+			message: 'Organization Membership Required',
+			reason: 'Your account is authenticated, but you have not been added as an active expert or member of the Neubofy organization.',
+			permissionNeeded: 'Member Expert or Administrator Role assigned by an Organization Owner',
+			currentRole: 'Unassigned Account'
+		});
+	}
+
+	const role = authContext.role;
 	const isAdmin = isOrganizationAdmin(role);
 
 	// 3. Fetch organization

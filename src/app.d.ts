@@ -31,6 +31,13 @@ declare global {
 				name: string;
 			};
 		}
+		interface Error {
+			message: string;
+			reason?: string;
+			permissionNeeded?: string;
+			currentRole?: string;
+			code?: string;
+		}
 	}
 }
 

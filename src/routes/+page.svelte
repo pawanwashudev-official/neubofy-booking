@@ -6,10 +6,6 @@
 	// Active booking wizard step: 1 = Service, 2 = Expert & Duration, 3 = Date & Slot, 4 = Intake & OTP, 5 = Confirmed
 	let step = $state<1 | 2 | 3 | 4 | 5>(1);
 
-	// Category filter in Step 1
-	let selectedCategory = $state<string>('All');
-	const categories = ['All', 'Decide', 'Implement', 'Improve', 'Protect & Verify', 'Operate'];
-
 	// Selected states
 	let selectedEvent = $state<any>(null);
 	let selectedExpert = $state<any>(null);
@@ -57,13 +53,6 @@
 
 	// Calendar month view state
 	let currentCalendarMonth = $state<Date>(new Date());
-
-	// Filtered consultation events
-	const filteredEvents = $derived(
-		selectedCategory === 'All'
-			? data.eventTypes
-			: data.eventTypes.filter((et: any) => et.category?.toLowerCase() === selectedCategory.toLowerCase())
-	);
 
 	// Step 1: Select Event
 	function handleSelectEvent(event: any) {
@@ -397,71 +386,78 @@
 				<p class="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto">
 					Select your technology requirement below. All strategy sessions are currently complimentary.
 				</p>
+			</div>
 
-				<!-- Category Filters -->
-				<div class="flex flex-wrap items-center justify-center gap-2 mt-8">
-					{#each categories as cat}
-						<button
-							type="button"
-							onclick={() => (selectedCategory = cat)}
-							class="px-4 py-1.5 text-xs font-medium rounded-full transition-all {selectedCategory === cat
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
-								: 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/10'}"
+			{#if data.eventTypes && data.eventTypes.length > 0}
+				<!-- Consultation Event Cards -->
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in mt-8">
+					{#each data.eventTypes as eventType}
+						<div
+							class="glass-card-interactive rounded-2xl p-6 sm:p-7 flex flex-col justify-between relative group border border-white/10"
 						>
-							{cat}
-						</button>
+							<div>
+								<div class="flex items-center justify-between mb-4">
+									<span class="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider rounded-md bg-white/5 border border-white/10 text-zinc-300">
+										{eventType.category || 'Consultation'}
+									</span>
+									<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+										Complimentary
+									</span>
+								</div>
+
+								<h3 class="text-xl font-bold text-white group-hover:text-blue-400 transition-colors mb-2 leading-snug">
+									{eventType.name}
+								</h3>
+								<p class="text-sm text-zinc-400 line-clamp-3 mb-6 leading-relaxed">
+									{eventType.description || 'Specialized consultation session.'}
+								</p>
+							</div>
+
+							<div class="pt-4 border-t border-white/10">
+								<div class="flex items-center justify-between text-xs text-zinc-400 mb-4">
+									<span class="flex items-center gap-1.5">
+										<svg class="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+										{eventType.durations ? eventType.durations.join(' / ') : 30} mins
+									</span>
+									<span class="text-zinc-500">
+										{eventType.experts?.length || data.allExperts?.length || 1} specialist(s)
+									</span>
+								</div>
+
+								<button
+									type="button"
+									onclick={() => handleSelectEvent(eventType)}
+									class="w-full btn-electric py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 group-hover:shadow-[0_0_24px_rgba(59,130,246,0.6)]"
+								>
+									Select Service & Choose Expert →
+								</button>
+							</div>
+						</div>
 					{/each}
 				</div>
-			</div>
-
-			<!-- Consultation Event Cards -->
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-				{#each filteredEvents as eventType}
-					<div
-						class="glass-card-interactive rounded-2xl p-6 sm:p-7 flex flex-col justify-between relative group border border-white/10"
-					>
-						<div>
-							<div class="flex items-center justify-between mb-4">
-								<span class="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider rounded-md bg-white/5 border border-white/10 text-zinc-300">
-									{eventType.category || 'Consultation'}
-								</span>
-								<span class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-									Complimentary
-								</span>
-							</div>
-
-							<h3 class="text-xl font-bold text-white group-hover:text-blue-400 transition-colors mb-2 leading-snug">
-								{eventType.name}
-							</h3>
-							<p class="text-sm text-zinc-400 line-clamp-3 mb-6 leading-relaxed">
-								{eventType.description}
-							</p>
-						</div>
-
-						<div class="pt-4 border-t border-white/10">
-							<div class="flex items-center justify-between text-xs text-zinc-400 mb-4">
-								<span class="flex items-center gap-1.5">
-									<svg class="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-									</svg>
-									{eventType.durations ? eventType.durations.join(' / ') : 30} mins
-								</span>
-								<span class="text-zinc-500">
-									{eventType.experts?.length || data.allExperts?.length || 1} available expert(s)
-								</span>
-							</div>
-
-							<button
-								type="button"
-								onclick={() => handleSelectEvent(eventType)}
-								class="w-full btn-electric py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 group-hover:shadow-[0_0_24px_rgba(59,130,246,0.6)]"
-							>
-								Select Service & Choose Expert →
-							</button>
-						</div>
+			{:else}
+				<!-- Clean, Empty Manual State -->
+				<div class="glass-card rounded-3xl p-10 sm:p-14 text-center border border-white/10 max-w-lg mx-auto space-y-4 animate-fade-in mt-8">
+					<div class="w-16 h-16 mx-auto rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-3xl">
+						📅
 					</div>
-				{/each}
-			</div>
+					<h3 class="text-xl font-bold text-white">No Consultation Services Listed Yet</h3>
+					<p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
+						There are currently no active consultation services. Organization administrators and experts can create and configure consultation services manually in the Expert Portal.
+					</p>
+					<div class="pt-3">
+						<a
+							href="/dashboard"
+							class="btn-electric px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-[0_0_24px_rgba(59,130,246,0.4)]"
+						>
+							<span>Access Expert Portal</span>
+							<span>→</span>
+						</a>
+					</div>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- ========================================================= -->
@@ -539,7 +535,7 @@
 								<!-- Session Durations & Free Badge -->
 								<div class="w-full sm:w-auto flex flex-col items-end gap-3 shrink-0">
 									<div class="flex flex-wrap gap-2">
-										{#each expert.session_pricing || [{ duration: 30, price: 999 }, { duration: 60, price: 1999 }] as tier}
+										{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d) => ({ duration: d, price: 0 })) as tier}
 											<button
 												type="button"
 												onclick={() => handleSelectExpert(expert, tier.duration)}
@@ -548,8 +544,10 @@
 													: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
 											>
 												<span class="font-bold">{tier.duration} Mins</span>
-												<span class="text-[11px] text-zinc-400 line-through">₹{tier.price}</span>
-												<span class="text-[11px] text-emerald-400 font-bold">FREE</span>
+												{#if tier.price > 0}
+													<span class="text-[11px] text-zinc-400 line-through">₹{tier.price}</span>
+												{/if}
+												<span class="text-[11px] text-emerald-400 font-bold">Complimentary</span>
 											</button>
 										{/each}
 									</div>

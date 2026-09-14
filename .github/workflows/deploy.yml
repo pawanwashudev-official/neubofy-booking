@@ -1,47 +1,97 @@
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare
 
 on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/**'
+      - 'static/**'
+      - 'scripts/**'
+      - 'workers/**'
+      - 'functions/**'
+      - 'migrations/**'
+      - 'schema.sql'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.toml'
+      - 'svelte.config.js'
+      - 'vite.config.ts'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Component to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - pages
+          - database
+          - cron_worker
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # --------------------------------------------------------------------------
+  # 1. CHANGE DETECTION JOB
+  # Analyzes changed files to determine which jobs need to execute.
+  # --------------------------------------------------------------------------
+  detect-changes:
+    name: Detect Changed Components
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
+    outputs:
+      pages: ${{ steps.filter.outputs.pages == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'pages') }}
+      database: ${{ steps.filter.outputs.database == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'database') }}
+      cron_worker: ${{ steps.filter.outputs.cron_worker == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'cron_worker') }}
     steps:
-      - name: Validate required secrets
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
-          ORGANIZATION_OWNER_EMAIL: ${{ secrets.ORGANIZATION_OWNER_EMAIL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          APP_URL: ${{ secrets.APP_URL }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-        run: |
-          missing=()
-          [ -z "$CLOUDFLARE_API_TOKEN" ] && missing+=("CLOUDFLARE_API_TOKEN")
-          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing+=("CLOUDFLARE_ACCOUNT_ID")
-          [ -z "$D1_DATABASE_ID" ] && missing+=("D1_DATABASE_ID")
-          [ -z "$KV_NAMESPACE_ID" ] && missing+=("KV_NAMESPACE_ID")
-          [ -z "$ORGANIZATION_OWNER_EMAIL" ] && missing+=("ORGANIZATION_OWNER_EMAIL")
-          [ -z "$JWT_SECRET" ] && missing+=("JWT_SECRET")
-          [ -z "$APP_URL" ] && missing+=("APP_URL")
-          [ -z "$GOOGLE_CLIENT_ID" ] && missing+=("GOOGLE_CLIENT_ID")
-          [ -z "$GOOGLE_CLIENT_SECRET" ] && missing+=("GOOGLE_CLIENT_SECRET")
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing required secrets: ${missing[*]}"
-            echo ""
-            echo "Please add these secrets in GitHub: Settings > Secrets and variables > Actions"
-            echo "See README.md for setup instructions."
-            exit 1
-          fi
-          echo "All required secrets are configured"
+      - name: Detect Changes by Path
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters:
+            pages:
+              - 'src/**'
+              - 'static/**'
+              - 'scripts/**'
+              - 'functions/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'wrangler.toml'
+              - 'svelte.config.js'
+              - 'vite.config.ts'
+              - 'tailwind.config.js'
+              - 'postcss.config.js'
+              - 'tsconfig.json'
+              - '.github/workflows/deploy.yml'
+            database:
+              - 'migrations/**'
+              - 'schema.sql'
+              - '.github/workflows/deploy.yml'
+            cron_worker:
+              - 'workers/**'
+              - '.github/workflows/deploy.yml'
 
+  # --------------------------------------------------------------------------
+  # 2. DATABASE MIGRATION JOB
+  # Runs ONLY when schema.sql or migrations/ have changed.
+  # --------------------------------------------------------------------------
+  migrate-database:
+    name: Apply Database Migrations
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.database == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -54,66 +104,92 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Cloudflare resources
+      - name: Configure D1 Database ID
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: |
+          if [ -z "$D1_DATABASE_ID" ]; then
+            echo "::error::D1_DATABASE_ID secret is missing."
+            exit 1
+          fi
+          sed -i "s/database_id = \"YOUR_DATABASE_ID\"/database_id = \"$D1_DATABASE_ID\"/" wrangler.toml
+
+      - name: Execute D1 Migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
         run: |
-          # IDs are stable deployment configuration and are stored as GitHub secrets.
-          sed -i "s/database_id = \"YOUR_DATABASE_ID\"/database_id = \"$D1_DATABASE_ID\"/" wrangler.toml
-          sed -i "s/id = \"YOUR_KV_NAMESPACE_ID\"/id = \"$KV_NAMESPACE_ID\"/" wrangler.toml
-
-          # Initialize only a brand-new database. schema.sql is the complete
-          # current schema; replaying it on every deployment causes duplicate
-          # index errors and makes migration failures invisible.
+          # 1. Initialize schema if brand-new database
           TABLE_COUNT=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';" --json | jq -r '.[0].results[0].count // 0')
           if [ "$TABLE_COUNT" = "0" ]; then
-            echo "Initializing new database schema..."
+            echo "Initializing new database schema from schema.sql..."
             npx wrangler d1 execute neubofy-booking-db --file=./schema.sql --remote
           else
-            echo "Database already initialized with $TABLE_COUNT tables; skipping schema.sql"
+            echo "Database already initialized with $TABLE_COUNT tables."
           fi
 
-          # Apply the organization upgrade only to installations created
-          # before organization support. Older migrations are already present
-          # in schema.sql and must never be replayed on production.
+          # 2. Migration 0009: Organization access
           ORG_TABLE=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'organizations';" --json | jq -r '.[0].results[0].count // 0')
           if [ "$ORG_TABLE" = "0" ]; then
             echo "Applying organization access migration..."
             npx wrangler d1 execute neubofy-booking-db --file=./migrations/0009_organization_access.sql --remote
-          else
-            echo "Organization schema already present; skipping migration"
           fi
 
+          # 3. Migration 0010: Organization settings
           ORG_EMAIL_COLUMN=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM pragma_table_info('organizations') WHERE name = 'email_from';" --json | jq -r '.[0].results[0].count // 0')
           if [ "$ORG_EMAIL_COLUMN" = "0" ]; then
             echo "Applying organization settings migration..."
             npx wrangler d1 execute neubofy-booking-db --file=./migrations/0010_organization_settings.sql --remote
+          fi
+
+          # 4. Migration 0011: Consultation SaaS revamp
+          REVAMP_COLUMN=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM pragma_table_info('users') WHERE name = 'role_title';" --json | jq -r '.[0].results[0].count // 0')
+          if [ "$REVAMP_COLUMN" = "0" ]; then
+            echo "Applying consultation revamp migration..."
+            npx wrangler d1 execute neubofy-booking-db --file=./migrations/0011_consultation_revamp.sql --remote
           else
-            echo "Organization settings schema already present; skipping migration"
+            echo "Consultation revamp schema already present; skipping migration."
           fi
 
-      - name: Build
-        run: npm run build
+  # --------------------------------------------------------------------------
+  # 3. CLOUDFLARE PAGES DEPLOY JOB
+  # Runs ONLY when web app code, static files, or build configs change.
+  # --------------------------------------------------------------------------
+  deploy-pages:
+    name: Build & Deploy Pages
+    needs: [detect-changes, migrate-database]
+    if: ${{ always() && !cancelled() && needs.detect-changes.outputs.pages == 'true' && (needs.migrate-database.result == 'success' || needs.migrate-database.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Create Pages project if needed
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Cloudflare IDs
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
         run: |
-          if ! npx wrangler pages project list 2>/dev/null | grep -q "neubofy-booking"; then
-            echo "Creating Pages project..."
-            npx wrangler pages project create neubofy-booking --production-branch=main || true
+          if [ -n "$D1_DATABASE_ID" ]; then
+            sed -i "s/database_id = \"YOUR_DATABASE_ID\"/database_id = \"$D1_DATABASE_ID\"/" wrangler.toml
+          fi
+          if [ -n "$KV_NAMESPACE_ID" ]; then
+            sed -i "s/id = \"YOUR_KV_NAMESPACE_ID\"/id = \"$KV_NAMESPACE_ID\"/" wrangler.toml
           fi
 
-          # Clear any existing env vars to avoid conflicts with wrangler.toml
-          echo "Clearing existing env vars..."
-          curl -X PATCH "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/neubofy-booking" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data '{"deployment_configs": {"production": {"env_vars": null}}}' || true
+      - name: Build SvelteKit Application
+        run: npm run build
 
       - name: Deploy to Cloudflare Pages
         env:
@@ -129,7 +205,6 @@ jobs:
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
         run: |
-          # Add env vars to wrangler.toml before deploy
           cat >> wrangler.toml << EOF
 
           [vars]
@@ -146,6 +221,28 @@ jobs:
 
           npx wrangler pages deploy .svelte-kit/cloudflare --project-name=neubofy-booking --commit-dirty=true
 
+  # --------------------------------------------------------------------------
+  # 4. CLOUDFLARE CRON WORKER DEPLOY JOB
+  # Runs ONLY when workers/ directory changes.
+  # --------------------------------------------------------------------------
+  deploy-cron:
+    name: Deploy Cron Worker
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cron_worker == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Deploy Cron Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -154,12 +251,7 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           cd workers/cron-reminders
-
-          # Deploy the worker
           npx wrangler deploy
-
-          # Set secrets for the worker
           echo "$APP_URL" | npx wrangler secret put APP_URL
           echo "$CRON_SECRET" | npx wrangler secret put CRON_SECRET
-
-          echo "Cron worker deployed with 5-minute schedule"
+          echo "Cron worker deployed with 5-minute reminder schedule."
