@@ -147,37 +147,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # 1. Initialize schema if brand-new database
-          TABLE_COUNT=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';" --json | jq -r '.[0].results[0].count // 0')
-          if [ "$TABLE_COUNT" = "0" ]; then
-            echo "Initializing new database schema from schema.sql..."
-            npx wrangler d1 execute neubofy-booking-db --file=./schema.sql --remote
-          else
-            echo "Database already initialized with $TABLE_COUNT tables."
-          fi
-
-          # 2. Migration 0009: Organization access
-          ORG_TABLE=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'organizations';" --json | jq -r '.[0].results[0].count // 0')
-          if [ "$ORG_TABLE" = "0" ]; then
-            echo "Applying organization access migration..."
-            npx wrangler d1 execute neubofy-booking-db --file=./migrations/0009_organization_access.sql --remote
-          fi
-
-          # 3. Migration 0010: Organization settings
-          ORG_EMAIL_COLUMN=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM pragma_table_info('organizations') WHERE name = 'email_from';" --json | jq -r '.[0].results[0].count // 0')
-          if [ "$ORG_EMAIL_COLUMN" = "0" ]; then
-            echo "Applying organization settings migration..."
-            npx wrangler d1 execute neubofy-booking-db --file=./migrations/0010_organization_settings.sql --remote
-          fi
-
-          # 4. Migration 0011: Consultation SaaS revamp
-          REVAMP_COLUMN=$(npx wrangler d1 execute neubofy-booking-db --remote --command "SELECT COUNT(*) AS count FROM pragma_table_info('users') WHERE name = 'role_title';" --json | jq -r '.[0].results[0].count // 0')
-          if [ "$REVAMP_COLUMN" = "0" ]; then
-            echo "Applying consultation revamp migration..."
-            npx wrangler d1 execute neubofy-booking-db --file=./migrations/0011_consultation_revamp.sql --remote
-          else
-            echo "Consultation revamp schema already present; skipping migration."
-          fi
+          echo "Applying consolidated master database schema to remote D1..."
+          npx wrangler d1 execute neubofy-booking-db --file=./schema.sql --remote
 
   # --------------------------------------------------------------------------
   # 3. CLOUDFLARE PAGES DEPLOY JOB

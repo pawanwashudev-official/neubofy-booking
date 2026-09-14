@@ -1,5 +1,11 @@
 -- ==============================================================================
--- Neubofy Consultation & Booking Platform - Master Schema
+-- Neubofy Consultation & Booking Platform - Master Consolidated Migration (0001)
+-- ==============================================================================
+-- This script resets and provisions the complete database schema from scratch.
+-- To run on local D1:
+--   npx wrangler d1 execute neubofy-booking-db --local --file=./migrations/0001_initial_schema.sql
+-- To run on remote Cloudflare production D1:
+--   npx wrangler d1 execute neubofy-booking-db --remote --file=./migrations/0001_initial_schema.sql
 -- ==============================================================================
 
 -- 1. Drop existing views and tables in reverse dependency order
