@@ -58,7 +58,7 @@
 		try {
 			const response = await fetch('/api/calendars/google');
 			if (response.ok) {
-				const data = await response.json();
+				const data = (await response.json()) as any;
 				googleCalendars = data.calendars || [];
 				if (selectedCalendarIds.size === 0 && googleCalendars.length > 0) {
 					selectedCalendarIds = new Set(googleCalendars.map((c) => c.id));

@@ -16,7 +16,7 @@ export const POST: RequestHandler = async (event) => {
 	const db = event.platform?.env?.DB;
 	if (!db) throw error(500, 'Database not available');
 
-	const { id, is_active } = await event.request.json().catch(() => ({}));
+	const { id, is_active } = (await event.request.json().catch(() => ({}))) as { id?: string; is_active?: number | boolean };
 	if (!id) {
 		throw error(400, 'Service ID is required');
 	}

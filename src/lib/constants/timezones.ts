@@ -1,162 +1,140 @@
 /**
- * Timezone constants and utilities
+ * Comprehensive World Timezone Constants & Utilities
+ * Provides IANA timezones, UTC offsets, live current time, and fuzzy search.
  */
 
 export interface TimezoneOption {
 	value: string;
 	label: string;
+	offsetLabel: string;
+	region: string;
 }
 
 /**
- * Quick lookup for common timezone labels
+ * Calculate the current UTC offset string for any IANA timezone (e.g., UTC+05:30, UTC-05:00)
  */
-export const TIMEZONE_LABELS: Record<string, string> = {
-	'America/Los_Angeles': 'Pacific Time',
-	'America/Denver': 'Mountain Time',
-	'America/Chicago': 'Central Time',
-	'America/New_York': 'Eastern Time',
-	'America/Anchorage': 'Alaska Time',
-	'America/Phoenix': 'Arizona Time',
-	'Pacific/Honolulu': 'Hawaii Time',
-	'America/St_Johns': 'Newfoundland Time',
-	'America/Halifax': 'Atlantic Time',
-	'America/Sao_Paulo': 'Brasilia Time',
-	'America/Buenos_Aires': 'Buenos Aires Time',
-	'America/Mexico_City': 'Mexico City Time',
-	'Europe/London': 'UK, Ireland Time',
-	'Europe/Paris': 'Central European Time',
-	'Europe/Amsterdam': 'Amsterdam Time',
-	'Europe/Berlin': 'Berlin Time',
-	'Europe/Helsinki': 'Eastern European Time',
-	'Europe/Moscow': 'Moscow Time',
-	'Europe/Istanbul': 'Turkey Time',
-	'Asia/Dubai': 'Dubai Time',
-	'Asia/Kolkata': 'India Time',
-	'Asia/Bangkok': 'Indochina Time',
-	'Asia/Singapore': 'Singapore Time',
-	'Asia/Shanghai': 'China Time',
-	'Asia/Hong_Kong': 'Hong Kong Time',
-	'Asia/Tokyo': 'Japan Time',
-	'Asia/Seoul': 'Seoul Time',
-	'Australia/Sydney': 'Sydney Time',
-	'Australia/Brisbane': 'Brisbane Time',
-	'Australia/Perth': 'Perth Time',
-	'Pacific/Auckland': 'Auckland Time',
-	'UTC': 'UTC Time'
-};
-
-/**
- * Comprehensive timezone list grouped by region
- */
-export const TIMEZONE_GROUPS: Record<string, TimezoneOption[]> = {
-	'US/Canada': [
-		{ value: 'America/Los_Angeles', label: 'Pacific Time - US & Canada' },
-		{ value: 'America/Denver', label: 'Mountain Time - US & Canada' },
-		{ value: 'America/Chicago', label: 'Central Time - US & Canada' },
-		{ value: 'America/New_York', label: 'Eastern Time - US & Canada' },
-		{ value: 'America/Anchorage', label: 'Alaska Time' },
-		{ value: 'America/Phoenix', label: 'Arizona Time' },
-		{ value: 'America/St_Johns', label: 'Newfoundland Time' },
-		{ value: 'Pacific/Honolulu', label: 'Hawaii Time' }
-	],
-	'America': [
-		{ value: 'America/Buenos_Aires', label: 'Buenos Aires Time' },
-		{ value: 'America/Sao_Paulo', label: 'Brasilia Time' },
-		{ value: 'America/Santiago', label: 'Santiago Time' },
-		{ value: 'America/Bogota', label: 'Bogota, Lima Time' },
-		{ value: 'America/Caracas', label: 'Caracas Time' },
-		{ value: 'America/Mexico_City', label: 'Mexico City Time' },
-		{ value: 'America/Halifax', label: 'Atlantic Time' },
-		{ value: 'America/Montevideo', label: 'Montevideo Time' }
-	],
-	'Europe': [
-		{ value: 'Europe/London', label: 'UK, Ireland, Lisbon Time' },
-		{ value: 'Europe/Paris', label: 'Central European Time' },
-		{ value: 'Europe/Helsinki', label: 'Eastern European Time' },
-		{ value: 'Europe/Moscow', label: 'Moscow Time' },
-		{ value: 'Europe/Istanbul', label: 'Turkey Time' },
-		{ value: 'Europe/Minsk', label: 'Minsk Time' },
-		{ value: 'Europe/Amsterdam', label: 'Amsterdam Time' },
-		{ value: 'Europe/Berlin', label: 'Berlin Time' },
-		{ value: 'Europe/Rome', label: 'Rome Time' },
-		{ value: 'Europe/Madrid', label: 'Madrid Time' },
-		{ value: 'Europe/Stockholm', label: 'Stockholm Time' },
-		{ value: 'Europe/Warsaw', label: 'Warsaw Time' },
-		{ value: 'Europe/Athens', label: 'Athens Time' },
-		{ value: 'Europe/Zurich', label: 'Zurich Time' }
-	],
-	'Asia': [
-		{ value: 'Asia/Dubai', label: 'Dubai Time' },
-		{ value: 'Asia/Kolkata', label: 'India, Sri Lanka Time' },
-		{ value: 'Asia/Bangkok', label: 'Indochina Time' },
-		{ value: 'Asia/Singapore', label: 'Singapore, Perth Time' },
-		{ value: 'Asia/Shanghai', label: 'China Time' },
-		{ value: 'Asia/Hong_Kong', label: 'Hong Kong Time' },
-		{ value: 'Asia/Tokyo', label: 'Japan, Korea Time' },
-		{ value: 'Asia/Seoul', label: 'Seoul Time' },
-		{ value: 'Asia/Jakarta', label: 'Jakarta Time' },
-		{ value: 'Asia/Manila', label: 'Manila Time' },
-		{ value: 'Asia/Karachi', label: 'Pakistan Time' },
-		{ value: 'Asia/Tehran', label: 'Tehran Time' },
-		{ value: 'Asia/Jerusalem', label: 'Israel Time' },
-		{ value: 'Asia/Beirut', label: 'Lebanon Time' },
-		{ value: 'Asia/Baghdad', label: 'Baghdad Time' },
-		{ value: 'Asia/Kabul', label: 'Kabul Time' },
-		{ value: 'Asia/Kathmandu', label: 'Kathmandu Time' },
-		{ value: 'Asia/Vladivostok', label: 'Vladivostok Time' },
-		{ value: 'Asia/Yekaterinburg', label: 'Yekaterinburg Time' }
-	],
-	'Africa': [
-		{ value: 'Africa/Cairo', label: 'Cairo Time' },
-		{ value: 'Africa/Lagos', label: 'West Africa Time' },
-		{ value: 'Africa/Johannesburg', label: 'South Africa Time' },
-		{ value: 'Africa/Nairobi', label: 'East Africa Time' },
-		{ value: 'Africa/Casablanca', label: 'Casablanca Time' }
-	],
-	'Australia': [
-		{ value: 'Australia/Sydney', label: 'Sydney, Melbourne Time' },
-		{ value: 'Australia/Brisbane', label: 'Brisbane Time' },
-		{ value: 'Australia/Adelaide', label: 'Adelaide Time' },
-		{ value: 'Australia/Perth', label: 'Perth Time' },
-		{ value: 'Australia/Darwin', label: 'Darwin Time' }
-	],
-	'Pacific': [
-		{ value: 'Pacific/Auckland', label: 'Auckland Time' },
-		{ value: 'Pacific/Fiji', label: 'Fiji Time' },
-		{ value: 'Pacific/Guam', label: 'Guam Time' },
-		{ value: 'Pacific/Tahiti', label: 'Tahiti Time' }
-	],
-	'Atlantic': [
-		{ value: 'Atlantic/Azores', label: 'Azores Time' },
-		{ value: 'Atlantic/Cape_Verde', label: 'Cape Verde Time' },
-		{ value: 'Atlantic/Reykjavik', label: 'Iceland Time' }
-	],
-	'UTC': [
-		{ value: 'UTC', label: 'UTC Time' }
-	]
-};
-
-/**
- * Get a friendly label for a timezone
- */
-export function getTimezoneLabel(tz: string): string {
-	return TIMEZONE_LABELS[tz] || tz.replace(/_/g, ' ').split('/').pop() || tz;
-}
-
-/**
- * Detect the user's timezone
- */
-export function detectTimezone(): string {
+export function getUtcOffset(tz: string): string {
 	try {
-		return Intl.DateTimeFormat().resolvedOptions().timeZone;
+		const now = new Date();
+		const formatter = new Intl.DateTimeFormat('en-US', {
+			timeZone: tz,
+			timeZoneName: 'shortOffset'
+		});
+		const parts = formatter.formatToParts(now);
+		const tzPart = parts.find((p) => p.type === 'timeZoneName');
+		if (tzPart && tzPart.value) {
+			return tzPart.value.replace('GMT', 'UTC');
+		}
+		return 'UTC';
 	} catch {
-		return 'Europe/Amsterdam';
+		return 'UTC';
 	}
 }
 
-/**
- * Get the current time in a specific timezone
- */
+export const TIMEZONE_OPTIONS: TimezoneOption[] = [
+	// Popular & Asia
+	{ value: 'Asia/Kolkata', label: 'India Standard Time (IST)', offsetLabel: 'UTC+05:30', region: 'Asia' },
+	{ value: 'Asia/Dubai', label: 'Dubai / Gulf Standard Time', offsetLabel: 'UTC+04:00', region: 'Asia' },
+	{ value: 'Asia/Singapore', label: 'Singapore Standard Time (SGT)', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Hong_Kong', label: 'Hong Kong Time (HKT)', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Tokyo', label: 'Japan Standard Time (JST)', offsetLabel: 'UTC+09:00', region: 'Asia' },
+	{ value: 'Asia/Seoul', label: 'Korea Standard Time (KST)', offsetLabel: 'UTC+09:00', region: 'Asia' },
+	{ value: 'Asia/Bangkok', label: 'Indochina Time (ICT)', offsetLabel: 'UTC+07:00', region: 'Asia' },
+	{ value: 'Asia/Jakarta', label: 'Western Indonesia Time (WIB)', offsetLabel: 'UTC+07:00', region: 'Asia' },
+	{ value: 'Asia/Manila', label: 'Philippine Standard Time (PST)', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Karachi', label: 'Pakistan Standard Time (PKT)', offsetLabel: 'UTC+05:00', region: 'Asia' },
+	{ value: 'Asia/Dhaka', label: 'Bangladesh Standard Time (BST)', offsetLabel: 'UTC+06:00', region: 'Asia' },
+	{ value: 'Asia/Colombo', label: 'Sri Lanka Standard Time (SLST)', offsetLabel: 'UTC+05:30', region: 'Asia' },
+	{ value: 'Asia/Kathmandu', label: 'Nepal Time (NPT)', offsetLabel: 'UTC+05:45', region: 'Asia' },
+	{ value: 'Asia/Shanghai', label: 'China Standard Time (CST)', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Taipei', label: 'Taipei Time', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Kuala_Lumpur', label: 'Malaysia Time', offsetLabel: 'UTC+08:00', region: 'Asia' },
+	{ value: 'Asia/Riyadh', label: 'Arabia Standard Time (AST)', offsetLabel: 'UTC+03:00', region: 'Middle East' },
+	{ value: 'Asia/Qatar', label: 'Qatar Time', offsetLabel: 'UTC+03:00', region: 'Middle East' },
+	{ value: 'Asia/Jerusalem', label: 'Israel Standard Time (IST)', offsetLabel: 'UTC+02:00', region: 'Middle East' },
+
+	// US & Canada
+	{ value: 'America/New_York', label: 'Eastern Time (US & Canada)', offsetLabel: 'UTC-05:00', region: 'US/Canada' },
+	{ value: 'America/Chicago', label: 'Central Time (US & Canada)', offsetLabel: 'UTC-06:00', region: 'US/Canada' },
+	{ value: 'America/Denver', label: 'Mountain Time (US & Canada)', offsetLabel: 'UTC-07:00', region: 'US/Canada' },
+	{ value: 'America/Los_Angeles', label: 'Pacific Time (US & Canada)', offsetLabel: 'UTC-08:00', region: 'US/Canada' },
+	{ value: 'America/Anchorage', label: 'Alaska Time', offsetLabel: 'UTC-09:00', region: 'US/Canada' },
+	{ value: 'Pacific/Honolulu', label: 'Hawaii-Aleutian Time', offsetLabel: 'UTC-10:00', region: 'US/Canada' },
+	{ value: 'America/Phoenix', label: 'Arizona Time (MST)', offsetLabel: 'UTC-07:00', region: 'US/Canada' },
+	{ value: 'America/Toronto', label: 'Toronto Time (EST)', offsetLabel: 'UTC-05:00', region: 'US/Canada' },
+	{ value: 'America/Vancouver', label: 'Vancouver Time (PST)', offsetLabel: 'UTC-08:00', region: 'US/Canada' },
+	{ value: 'America/Halifax', label: 'Atlantic Time', offsetLabel: 'UTC-04:00', region: 'US/Canada' },
+	{ value: 'America/St_Johns', label: 'Newfoundland Time', offsetLabel: 'UTC-03:30', region: 'US/Canada' },
+
+	// Europe
+	{ value: 'Europe/London', label: 'Greenwich Mean Time / British Summer Time', offsetLabel: 'UTC+00:00', region: 'Europe' },
+	{ value: 'Europe/Dublin', label: 'Ireland Time', offsetLabel: 'UTC+00:00', region: 'Europe' },
+	{ value: 'Europe/Paris', label: 'Central European Time (Paris, Brussels)', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Berlin', label: 'Berlin, Frankfurt, Munich', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Amsterdam', label: 'Amsterdam Time', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Rome', label: 'Rome, Milan', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Madrid', label: 'Madrid, Barcelona', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Zurich', label: 'Zurich, Geneva', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Stockholm', label: 'Stockholm Time', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Warsaw', label: 'Warsaw Time', offsetLabel: 'UTC+01:00', region: 'Europe' },
+	{ value: 'Europe/Helsinki', label: 'Eastern European Time (Helsinki, Tallinn)', offsetLabel: 'UTC+02:00', region: 'Europe' },
+	{ value: 'Europe/Athens', label: 'Athens, Bucharest', offsetLabel: 'UTC+02:00', region: 'Europe' },
+	{ value: 'Europe/Istanbul', label: 'Turkey Time', offsetLabel: 'UTC+03:00', region: 'Europe' },
+	{ value: 'Europe/Moscow', label: 'Moscow Standard Time', offsetLabel: 'UTC+03:00', region: 'Europe' },
+
+	// Australia & Pacific
+	{ value: 'Australia/Sydney', label: 'Sydney, Melbourne, Canberra (AEST)', offsetLabel: 'UTC+10:00', region: 'Australia' },
+	{ value: 'Australia/Brisbane', label: 'Brisbane Time (AEST)', offsetLabel: 'UTC+10:00', region: 'Australia' },
+	{ value: 'Australia/Adelaide', label: 'Adelaide Time (ACST)', offsetLabel: 'UTC+09:30', region: 'Australia' },
+	{ value: 'Australia/Perth', label: 'Perth Time (AWST)', offsetLabel: 'UTC+08:00', region: 'Australia' },
+	{ value: 'Pacific/Auckland', label: 'New Zealand Standard Time (NZST)', offsetLabel: 'UTC+12:00', region: 'Pacific' },
+	{ value: 'Pacific/Fiji', label: 'Fiji Time', offsetLabel: 'UTC+12:00', region: 'Pacific' },
+
+	// Latin America
+	{ value: 'America/Sao_Paulo', label: 'Sao Paulo, Rio de Janeiro', offsetLabel: 'UTC-03:00', region: 'Latin America' },
+	{ value: 'America/Buenos_Aires', label: 'Buenos Aires Time', offsetLabel: 'UTC-03:00', region: 'Latin America' },
+	{ value: 'America/Santiago', label: 'Santiago Time', offsetLabel: 'UTC-04:00', region: 'Latin America' },
+	{ value: 'America/Bogota', label: 'Bogota, Lima, Quito', offsetLabel: 'UTC-05:00', region: 'Latin America' },
+	{ value: 'America/Mexico_City', label: 'Mexico City Time', offsetLabel: 'UTC-06:00', region: 'Latin America' },
+
+	// Africa
+	{ value: 'Africa/Cairo', label: 'Cairo, Alexandria', offsetLabel: 'UTC+02:00', region: 'Africa' },
+	{ value: 'Africa/Johannesburg', label: 'South African Standard Time (SAST)', offsetLabel: 'UTC+02:00', region: 'Africa' },
+	{ value: 'Africa/Lagos', label: 'West Africa Time (Nigeria)', offsetLabel: 'UTC+01:00', region: 'Africa' },
+	{ value: 'Africa/Nairobi', label: 'East Africa Time (Kenya)', offsetLabel: 'UTC+03:00', region: 'Africa' },
+	{ value: 'Africa/Casablanca', label: 'Morocco Time', offsetLabel: 'UTC+01:00', region: 'Africa' },
+
+	// Standard UTC
+	{ value: 'UTC', label: 'Coordinated Universal Time (UTC)', offsetLabel: 'UTC+00:00', region: 'UTC' }
+];
+
+export const TIMEZONE_LABELS: Record<string, string> = Object.fromEntries(
+	TIMEZONE_OPTIONS.map((t) => [t.value, t.label])
+);
+
+export const TIMEZONE_GROUPS: Record<string, Array<{ value: string; label: string }>> = TIMEZONE_OPTIONS.reduce(
+	(acc, tz) => {
+		if (!acc[tz.region]) acc[tz.region] = [];
+		acc[tz.region].push({ value: tz.value, label: `${tz.label} (${tz.offsetLabel})` });
+		return acc;
+	},
+	{} as Record<string, Array<{ value: string; label: string }>>
+);
+
+export function getTimezoneLabel(tz: string): string {
+	const found = TIMEZONE_OPTIONS.find((t) => t.value === tz);
+	if (found) return `${found.label} (${found.offsetLabel})`;
+	return tz.replace(/_/g, ' ').split('/').pop() || tz;
+}
+
+export function detectTimezone(): string {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+	} catch {
+		return 'Asia/Kolkata';
+	}
+}
+
 export function getCurrentTime(tz: string, use12Hour = true): string {
 	try {
 		return new Intl.DateTimeFormat('en-US', {
@@ -170,9 +148,6 @@ export function getCurrentTime(tz: string, use12Hour = true): string {
 	}
 }
 
-/**
- * Get timezone label with current time
- */
 export function getTimezoneWithTime(tz: string, use12Hour = true): string {
-	return `${getTimezoneLabel(tz)} (${getCurrentTime(tz, use12Hour)})`;
+	return `${getTimezoneLabel(tz)} • ${getCurrentTime(tz, use12Hour)}`;
 }

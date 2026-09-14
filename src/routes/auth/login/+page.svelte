@@ -76,7 +76,7 @@
 						<span class="text-base shrink-0">⚠️</span>
 						<div class="space-y-1">
 							<p>{form.error}</p>
-							{#if form.missingOAuth}
+							{#if (form as any)?.missingOAuth}
 								<p class="text-[11px] text-red-300/80">
 									Set <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, and <code>APP_URL</code> in environment variables.
 								</p>
@@ -135,35 +135,6 @@
 							</div>
 							<p class="text-[11px] text-amber-200/80">
 								Google OAuth keys are not detected in your local environment. To test the Expert Portal without Google Cloud setup, click Super Admin Access below.
-							</p>
-						</div>
-					{/if}
-
-					<!-- Dev / Quick Super Admin Login -->
-					{#if data.hasDevMode}
-						<div class="pt-2">
-							<form
-								method="POST"
-								action="?/devLogin"
-								use:enhance={() => {
-									isSubmitting = true;
-									return async ({ update }) => {
-										isSubmitting = false;
-										await update();
-									};
-								}}
-							>
-								<button
-									type="submit"
-									disabled={isSubmitting}
-									class="w-full btn-electric py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(59,130,246,0.4)] disabled:opacity-50"
-								>
-									<span>⚡ Sign In as Super Admin</span>
-									<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/20 uppercase font-mono">Quick Access</span>
-								</button>
-							</form>
-							<p class="text-[10px] text-zinc-500 text-center mt-2">
-								Instant Owner session (<code>admin@neubofy.in</code>) with full organization privileges.
 							</p>
 						</div>
 					{/if}

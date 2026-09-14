@@ -204,10 +204,10 @@
 									{booking.expert_name}
 								</td>
 								<td class="py-3.5 pr-4">
-									<div class="text-zinc-200">{formatDate(booking.start_time)}</div>
-									<div class="text-[10px] text-zinc-500">{formatTime(booking.start_time)} ({booking.duration_minutes}m)</div>
+									<div class="text-zinc-200">{formatDate(String(booking.start_time))}</div>
+									<div class="text-[10px] text-zinc-500">{formatTime(String(booking.start_time))} ({booking.duration_minutes}m)</div>
 								</td>
-								<td class="py-3.5 pr-4 max-w-xs truncate text-zinc-400" title={booking.goal}>
+								<td class="py-3.5 pr-4 max-w-xs truncate text-zinc-400" title={String(booking.goal || '')}>
 									{booking.goal || 'No goal specified'}
 								</td>
 								<td class="py-3.5 text-right">

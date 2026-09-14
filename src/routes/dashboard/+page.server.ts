@@ -5,7 +5,7 @@
 
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
+import { getAuthContext, isOrganizationAdmin, getWorkspaceMode } from '$lib/server/auth';
 
 export const load: PageServerLoad = async (event) => {
 	const auth = await getAuthContext(event);
@@ -17,6 +17,9 @@ export const load: PageServerLoad = async (event) => {
 	if (!db) {
 		throw new Error('Database not available');
 	}
+
+	const isAdmin = isOrganizationAdmin(auth.role);
+	const workspaceMode = getWorkspaceMode(event, auth.role);
 
 	// 1. Get user info
 	const user = await db
@@ -43,17 +46,16 @@ export const load: PageServerLoad = async (event) => {
 			google_refresh_token: string | null;
 		}>();
 
-	const isAdmin = isOrganizationAdmin(auth.role);
-
 	// 2. Get consultation services
+	// In personal mode, show only services assigned/relevant to user or all active
 	const eventTypes = await db
 		.prepare(
-			`SELECT id, name, slug, duration_minutes as duration, description, is_active, category
+			`SELECT id, name, slug, duration_minutes as duration, description, is_active, category, is_free_only, price_inr
 			 FROM event_types
 			 WHERE organization_id = ? AND (? = 1 OR user_id = ?)
 			 ORDER BY created_at ASC`
 		)
-		.bind(auth.organizationId, isAdmin ? 1 : 0, auth.userId)
+		.bind(auth.organizationId, (isAdmin && workspaceMode === 'org') ? 1 : 0, auth.userId)
 		.all<{
 			id: string;
 			name: string;
@@ -62,24 +64,34 @@ export const load: PageServerLoad = async (event) => {
 			description: string;
 			is_active: number;
 			category: string | null;
+			is_free_only: number;
+			price_inr: number | null;
 		}>();
 
 	// 3. Get bookings with intake responses and Google Meet links
+	// Strictly filter by auth.userId when in personal mode or when not an admin
+	const filterByPersonalOnly = workspaceMode === 'personal' || !isAdmin;
+
 	const recentBookings = await db
 		.prepare(
 			`SELECT b.id, b.start_time, b.end_time, b.duration_minutes, b.attendee_name, b.attendee_email,
 			        b.attendee_phone, b.goal, b.reason, b.expectations, b.attendee_notes, b.meeting_url,
-			        b.status, b.created_at, b.canceled_by, b.cancellation_reason,
+			        b.status, b.created_at, b.canceled_by, b.cancellation_reason, b.final_price,
+			        b.discount_amount, b.coupon_code, b.is_paid,
 			        b.event_type_id, et.name as event_type_name, et.slug as event_type_slug, et.category as service_category,
 			        u.name as expert_name, u.role_title as expert_role
 			 FROM bookings b
 			 JOIN event_types et ON b.event_type_id = et.id
 			 JOIN users u ON b.user_id = u.id
-			 WHERE b.organization_id = ? AND (? = 1 OR b.user_id = ?)
+			 WHERE b.organization_id = ? ${filterByPersonalOnly ? 'AND b.user_id = ?' : ''}
 			 ORDER BY b.start_time DESC
 			 LIMIT 50`
 		)
-		.bind(auth.organizationId, isAdmin ? 1 : 0, auth.userId)
+		.bind(
+			...(filterByPersonalOnly
+				? [auth.organizationId, auth.userId]
+				: [auth.organizationId])
+		)
 		.all();
 
 	const organization = await db
@@ -92,6 +104,7 @@ export const load: PageServerLoad = async (event) => {
 		organization,
 		role: auth.role,
 		canManageOrganization: isAdmin,
+		workspaceMode,
 		eventTypes: eventTypes.results || [],
 		recentBookings: (recentBookings.results as any[]) || [],
 		appUrl: event.platform?.env?.APP_URL || 'https://booking.neubofy.in'

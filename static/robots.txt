@@ -1,0 +1,88 @@
+# Robots.txt for Neubofy Booking Portal (booking.neubofy.in)
+# Designed for high SEO visibility and modern AI Answer Engine Optimization (AEO)
+
+User-agent: *
+Allow: /
+Allow: /neubofylogo.png
+Allow: /favicon.ico
+Allow: /robots.txt
+Allow: /sitemap.xml
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /cancel/
+Disallow: /reschedule/
+Disallow: /reschedule-response/
+
+# Explicit permissions for Search Engine Crawlers
+User-agent: Googlebot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /cancel/
+Disallow: /reschedule/
+Disallow: /reschedule-response/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /cancel/
+Disallow: /reschedule/
+Disallow: /reschedule-response/
+
+# Explicit permissions for AI & Answer Engine Crawlers (Perplexity, ChatGPT, Claude, Gemini)
+User-agent: GPTBot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: CCBot
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+# Sitemap location
+Sitemap: https://booking.neubofy.in/sitemap.xml

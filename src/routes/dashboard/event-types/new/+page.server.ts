@@ -60,7 +60,14 @@ export const actions: Actions = {
 		const status = formData.get('status') || 'live'; // 'live' or 'paused'
 		const isActive = status === 'live' ? 1 : 0;
 		const durationsRaw = formData.getAll('durations'); // e.g. ['30', '60']
-		const assignedExperts = formData.getAll('assigned_experts').map((id) => id.toString());
+		const pricingType = formData.get('pricing_type') || 'complimentary'; // 'complimentary' or 'paid'
+		const isFreeOnly = pricingType === 'complimentary' ? 1 : 0;
+		const priceInr = isFreeOnly ? 0 : Math.max(0, parseInt((formData.get('price_inr') || '0').toString(), 10) || 0);
+		const assignedExpertsRaw = formData.getAll('assigned_experts');
+		let assignedExperts = assignedExpertsRaw.map((e) => e.toString().trim()).filter(Boolean);
+		if (assignedExperts.length === 0) {
+			assignedExperts = [auth.userId];
+		}
 
 		if (!name || !slug) {
 			return fail(400, { error: 'Service name and URL slug are required.' });
@@ -97,9 +104,9 @@ export const actions: Actions = {
 				.prepare(
 					`INSERT INTO event_types (
 						id, organization_id, user_id, name, slug, duration_minutes,
-						durations_json, category, description, is_active, is_free_only,
+						durations_json, category, description, is_active, is_free_only, price_inr,
 						location_type, created_at
-					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'google_meet', CURRENT_TIMESTAMP)`
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google_meet', CURRENT_TIMESTAMP)`
 				)
 				.bind(
 					eventTypeId,
@@ -111,7 +118,9 @@ export const actions: Actions = {
 					JSON.stringify(durations),
 					category,
 					description,
-					isActive
+					isActive,
+					isFreeOnly,
+					priceInr
 				)
 				.run();
 

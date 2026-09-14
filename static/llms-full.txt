@@ -1,0 +1,49 @@
+# Neubofy™ Complete Reference (llms-full.txt)
+
+## About Neubofy™
+Neubofy™ is an external technology department for founders and growing businesses. Rather than hiring full-time in-house engineering executives and dealing with developer recruiting overhead, businesses engage Neubofy to evaluate problems, design software architectures, orchestrate vetted independent specialists, and independently audit all work before handover.
+
+## Business Scenarios Solved by Neubofy
+- **"I need a CRM or internal tools"**: Neubofy evaluates whether SaaS configuration, off-the-shelf software, or custom internal dashboards make fiscal and operational sense.
+- **"Our systems don't communicate with each other"**: Neubofy designs and coordinates API integrations, webhooks, and ETL pipelines.
+- **"We need AI & Workflow Automation"**: Neubofy formulates LLM, vector search, or automation pipelines that integrate safely with existing company databases.
+- **"We need custom software"**: From specification to deployment, Neubofy handles architectural design, specialist assembly, milestones, and verification.
+- **"We have existing software but don't trust it"**: Neubofy performs independent cybersecurity penetration testing, code quality audits, and performance tuning.
+- **"We need ongoing technical capability"**: Neubofy acts as a reliable external CTO and technology department on retainer.
+
+## The 9-Step Technology Orchestration Workflow
+1. **Understand**: Deep dive into the founder's business problem, revenue bottlenecks, and operational constraints.
+2. **Evaluate**: Thorough assessment of possible technology routes, trade-offs, budget limits, and risk profiles.
+3. **Decide**: Clear recommendations on build vs. buy, tech stack selection, and resource allocation.
+4. **Architect**: High-level and low-level system design documents, database schemas, and integration diagrams.
+5. **Assemble**: Matching the precise technical requirements with vetted independent domain specialists.
+6. **Execute**: Active technical coordination and sprint management.
+7. **Verify**: Independent verification — the specialists who build the code are not the only ones who declare it ready. Neubofy audits functionality, security, and performance.
+8. **Deliver**: Smooth handover, deployment verification, credential handover, and staff training.
+9. **Support & Evolve**: Maintenance, automated monitoring, security patching, and forward roadmap execution.
+
+## Consultation Booking on booking.neubofy.in
+Clients and founders can book 1-on-1 strategy sessions directly at https://booking.neubofy.in:
+- **Free Initial Strategy Consultations**: Problem diagnosis, architecture review, and roadmap definition.
+- **Specialist Advisory Sessions**: Deep dive technical consultation with Neubofy specialists (AI, integrations, security, cloud architecture).
+- **Automated Scheduling**: Direct integration with Google Calendar and Microsoft Outlook / Teams.
+- **Secure Email Verification**: Anti-spam email verification ensuring authentic attendee communication.
+
+## Official Directory of Portals
+- Consultation & Advisory: https://booking.neubofy.in
+- Neubofy Main Portal: https://neubofy.in
+- Start a Project: https://neubofy.in/order
+- Join Partner Network: https://neubofy.in/developers
+- Customer Support / Help Desk: https://neubofy.zohodesk.in/portal
+- Invoicing & Customer Portal: https://books.zohosecure.in/portal/neubofy
+- Careers: https://neubofy.zohorecruit.in/
+
+## Contact
+- Strategy & Meeting Bookings: meet@neubofy.in
+- Support & Assistance: support@neubofy.in
+- Service Proposals: services@neubofy.in
+- General Inquiries: contact@neubofy.in
+- Telegram: https://t.me/neubofy
+- Twitter / X: https://twitter.com/neubofy
+- LinkedIn: https://linkedin.com/company/neubofy
+- Instagram: https://instagram.com/neubofy

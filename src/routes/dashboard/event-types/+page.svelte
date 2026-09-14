@@ -24,7 +24,7 @@
 			});
 
 			if (!res.ok) {
-				const json = await res.json().catch(() => ({}));
+				const json = (await res.json().catch(() => ({}))) as any;
 				throw new Error(json.message || 'Failed to update service status');
 			}
 
@@ -58,7 +58,7 @@
 			});
 
 			if (!res.ok) {
-				const json = await res.json().catch(() => ({}));
+				const json = (await res.json().catch(() => ({}))) as any;
 				throw new Error(json.message || 'Failed to delete consultation service');
 			}
 

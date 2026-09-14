@@ -2,13 +2,23 @@
 	import { browser } from '$app/environment';
 	import type { PageData } from './$types';
 	import TimezoneSelector from '$lib/components/TimezoneSelector.svelte';
+	import CountryCodeSelector from '$lib/components/booking/CountryCodeSelector.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import { createBrandColors } from '$lib/utils/colorUtils';
 	import { detectTimezone, getTimezoneLabel, getTimezoneWithTime, TIMEZONE_LABELS } from '$lib/constants/timezones';
 	import { formatDateLocal, formatSelectedDate, createFormatters } from '$lib/utils/dateFormatters';
 	import { BookingCalendar, TimeSlotList, BookingForm, BookingSuccess, EventSidebar } from '$lib/components/booking';
+	import { type CountryInfo } from '$lib/constants/countries';
 
 	let { data }: { data: PageData } = $props();
+
+	// Assigned specialist selection
+	let selectedExpertId = $state<string>(data.defaultExpertId || '');
+	const selectedExpert = $derived(
+		(data.assignedExperts as any[])?.find((e: any) => e.id === selectedExpertId) ||
+		(data.assignedExperts as any[])?.[0] ||
+		data.host
+	);
 
 	// Sanitize event description to prevent XSS (only in browser, SSR uses escaped version)
 	let sanitizedDescription = $state('');
@@ -42,8 +52,20 @@
 	let bookingForm = $state({
 		name: '',
 		email: '',
-		notes: ''
+		phone: '',
+		countryCode: '+91',
+		notes: '',
+		couponCode: ''
 	});
+	let mobileCountryFlag = $state('🇮🇳');
+	let showMobileCountryModal = $state(false);
+	let mobileCouponValidating = $state(false);
+	let mobileCouponMessage = $state('');
+	let mobileCouponError = $state('');
+	let mobileDiscountAmount = $state(0);
+	let mobileFinalPrice = $state(data.eventType?.is_free_only ? 0 : (data.eventType?.price_inr || 0));
+	let mobileIsComplimentary = $state(data.eventType?.is_free_only || (data.eventType?.price_inr || 0) === 0);
+
 	let bookingStatus = $state<'idle' | 'submitting' | 'success' | 'error'>('idle');
 	let bookingError = $state('');
 	let meetingUrl = $state<string | null>(null);
@@ -150,6 +172,20 @@
 		fetchMonthAvailability();
 	}
 
+	function selectExpert(expertId: string) {
+		if (selectedExpertId === expertId) return;
+		selectedExpertId = expertId;
+		selectedDate = null;
+		selectedSlot = null;
+		availableSlots = [];
+		if (browser) {
+			const url = new URL(window.location.href);
+			url.searchParams.set('expert', expertId);
+			window.history.replaceState({}, '', url.toString());
+		}
+		fetchMonthAvailability();
+	}
+
 	async function fetchMonthAvailability() {
 		loadingAvailability = true;
 
@@ -157,8 +193,9 @@
 			const year = currentMonth.getFullYear();
 			const month = currentMonth.getMonth() + 1;
 			const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+			const expertParam = selectedExpertId ? `&expertId=${encodeURIComponent(selectedExpertId)}` : '';
 
-			const response = await fetch(`/api/availability/month?event=${data.slug}&month=${monthStr}`);
+			const response = await fetch(`/api/availability/month?event=${data.slug}&month=${monthStr}${expertParam}`);
 			if (!response.ok) throw new Error('Failed to fetch availability');
 
 			const result = await response.json() as { availableDates?: string[] };
@@ -183,7 +220,8 @@
 		mobileStep = 'times';
 
 		try {
-			const response = await fetch(`/api/availability?event=${data.slug}&date=${dateStr}`);
+			const expertParam = selectedExpertId ? `&expertId=${encodeURIComponent(selectedExpertId)}` : '';
+			const response = await fetch(`/api/availability?event=${data.slug}&date=${dateStr}${expertParam}`);
 			if (!response.ok) throw new Error('Failed to fetch availability');
 			const result = await response.json() as { slots?: Array<{ start: string; end: string }> };
 			availableSlots = result.slots || [];
@@ -216,10 +254,53 @@
 		}
 	}
 
+	async function handleApplyMobileCoupon() {
+		if (!bookingForm.couponCode?.trim()) {
+			mobileCouponError = 'Please enter a coupon code.';
+			return;
+		}
+
+		mobileCouponValidating = true;
+		mobileCouponMessage = '';
+		mobileCouponError = '';
+
+		try {
+			const res = await fetch('/api/coupons/validate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					code: bookingForm.couponCode.trim(),
+					eventSlug: data.slug
+				})
+			});
+
+			const json = (await res.json()) as any;
+			if (!res.ok) {
+				throw new Error(json.message || 'Invalid coupon code.');
+			}
+
+			mobileCouponMessage = json.message;
+			mobileDiscountAmount = json.discountAmount || 0;
+			mobileFinalPrice = json.finalPrice || 0;
+			mobileIsComplimentary = json.isComplimentary;
+		} catch (err: any) {
+			mobileCouponError = err.message || 'Coupon verification failed.';
+			mobileDiscountAmount = 0;
+			mobileFinalPrice = data.eventType?.is_free_only ? 0 : (data.eventType?.price_inr || 0);
+			mobileIsComplimentary = data.eventType?.is_free_only || (data.eventType?.price_inr || 0) === 0;
+		} finally {
+			mobileCouponValidating = false;
+		}
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		bookingStatus = 'submitting';
 		bookingError = '';
+
+		const fullPhone = bookingForm.phone?.trim()
+			? `${bookingForm.countryCode || '+91'} ${bookingForm.phone.trim()}`
+			: '';
 
 		try {
 			const response = await fetch('/api/bookings', {
@@ -227,11 +308,14 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					eventSlug: data.slug,
+					expertUserId: selectedExpertId,
 					startTime: selectedSlot?.start,
 					endTime: selectedSlot?.end,
 					attendeeName: bookingForm.name,
 					attendeeEmail: bookingForm.email,
+					attendeePhone: fullPhone,
 					notes: bookingForm.notes,
+					couponCode: bookingForm.couponCode,
 					timezone: selectedTimezone
 				})
 			});
@@ -256,16 +340,89 @@
 </script>
 
 <svelte:head>
-	<title>{data.eventType?.name || 'Book a Meeting'}</title>
+	<title>{data.eventType?.name ? `${data.eventType.name} | Neubofy Consultation` : 'Book a Strategy Consultation | Neubofy™'}</title>
+	<meta
+		name="description"
+		content={data.eventType?.description || 'Book a specialized technology strategy consultation with Neubofy. Architecture, AI automation, and system integration advisory.'}
+	/>
+	<meta name="author" content="Neubofy" />
+	<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+	<link rel="canonical" href={`https://booking.neubofy.in/${data.slug}`} />
+
+	<!-- Open Graph -->
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="Neubofy™" />
+	<meta property="og:title" content={`${data.eventType?.name || 'Technology Consultation'} | Neubofy™`} />
+	<meta property="og:description" content={data.eventType?.description || 'Book a specialized technology strategy consultation with Neubofy.'} />
+	<meta property="og:url" content={`https://booking.neubofy.in/${data.slug}`} />
+	<meta property="og:image" content={data.eventType?.cover_image || 'https://neubofy.in/neubofylogo.png'} />
+	<meta property="og:image:alt" content="Neubofy Logo" />
+
+	<!-- Twitter Cards -->
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:site" content="@neubofy" />
+	<meta name="twitter:creator" content="@neubofy" />
+	<meta name="twitter:title" content={`${data.eventType?.name || 'Technology Consultation'} | Neubofy™`} />
+	<meta name="twitter:description" content={data.eventType?.description || 'Book a specialized technology strategy consultation with Neubofy.'} />
+	<meta name="twitter:image" content={data.eventType?.cover_image || 'https://neubofy.in/neubofylogo.png'} />
+
 	<!-- Dynamic favicon based on brand color -->
 	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,{encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='grad' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:${brandColor};stop-opacity:1'/><stop offset='100%' style='stop-color:${colors.darkHex};stop-opacity:1'/></linearGradient></defs><circle cx='16' cy='16' r='15' fill='url(%23grad)'/><rect x='7' y='9' width='18' height='15' rx='2' fill='white' opacity='0.95'/><rect x='7' y='9' width='18' height='5' rx='2' fill='white'/><rect x='7' y='12' width='18' height='2' fill='${brandColor}'/><rect x='10' y='6' width='2.5' height='5' rx='1' fill='white'/><rect x='19.5' y='6' width='2.5' height='5' rx='1' fill='white'/><circle cx='16' cy='18' r='4' fill='none' stroke='${colors.darkHex}' stroke-width='1.5'/><line x1='16' y1='18' x2='16' y2='16' stroke='${colors.darkHex}' stroke-width='1.5' stroke-linecap='round'/><line x1='16' y1='18' x2='18' y2='18' stroke='${colors.darkHex}' stroke-width='1.5' stroke-linecap='round'/></svg>`)}" />
+
+	<!-- Schema.org JSON-LD -->
+	{@html `<script type="application/ld+json">
+	${JSON.stringify({
+		'@context': 'https://schema.org',
+		'@graph': [
+			{
+				'@type': 'Service',
+				'@id': `https://booking.neubofy.in/${data.slug}#service`,
+				'name': data.eventType?.name || 'Technology Consultation',
+				'description': data.eventType?.description || 'Book a specialized technology strategy consultation with Neubofy.',
+				'serviceType': 'Technology Strategy Advisory',
+				'provider': {
+					'@type': 'Organization',
+					'name': 'Neubofy™',
+					'url': 'https://neubofy.in',
+					'logo': 'https://neubofy.in/neubofylogo.png'
+				},
+				'areaServed': 'Global'
+			},
+			{
+				'@type': 'ScheduleAction',
+				'name': `Book ${data.eventType?.name || 'Consultation'}`,
+				'target': `https://booking.neubofy.in/${data.slug}`,
+				'agent': {
+					'@type': 'Organization',
+					'name': 'Neubofy™'
+				}
+			},
+			{
+				'@type': 'BreadcrumbList',
+				'itemListElement': [
+					{
+						'@type': 'ListItem',
+						'position': 1,
+						'name': 'Home',
+						'item': 'https://booking.neubofy.in/'
+					},
+					{
+						'@type': 'ListItem',
+						'position': 2,
+						'name': data.eventType?.name || 'Consultation',
+						'item': `https://booking.neubofy.in/${data.slug}`
+					}
+				]
+			}
+		]
+	})}</script>`}
 </svelte:head>
 
 <div
 	class="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col items-center md:justify-center p-4 relative overflow-hidden"
 	style="--brand-color: {brandColor}; --brand-light: {colors.light}; --brand-lighter: {colors.lighter}; --brand-dark: {colors.dark}; --brand-rgb: {colors.rgb.r}, {colors.rgb.g}, {colors.rgb.b};"
 >
-	{#if bookingStatus === 'success'}
+	{#if bookingStatus === 'success' && selectedDate && selectedSlot}
 		<!-- Success Screen -->
 		<BookingSuccess
 			eventName={data.eventType?.name || 'Meeting'}
@@ -369,8 +526,41 @@
 					</div>
 				{/if}
 
-				<!-- Breakline / Divider -->
-				<div class="border-b border-white/10 mx-6 mb-6"></div>
+				<!-- Specialist Consultant Selector (Mobile) -->
+				{#if data.assignedExperts && data.assignedExperts.length > 1}
+					<div class="px-6 pb-6">
+						<span class="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-2.5">
+							Select Consultation Specialist *
+						</span>
+						<div class="grid grid-cols-1 gap-2">
+							{#each data.assignedExperts as exp}
+								{@const isExpSelected = selectedExpertId === exp.id}
+								<button
+									type="button"
+									onclick={() => selectExpert(exp.id)}
+									class="p-3 rounded-xl border text-left flex items-center gap-3 transition-all {isExpSelected
+										? 'bg-blue-600/20 border-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.25)]'
+										: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
+								>
+									{#if exp.profile_image}
+										<img src={exp.profile_image} alt={exp.name} class="w-9 h-9 rounded-full object-cover shrink-0 border border-white/20" />
+									{:else}
+										<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
+											{exp.name.charAt(0)}
+										</div>
+									{/if}
+									<div class="min-w-0 flex-1">
+										<div class="text-xs font-bold truncate">{exp.name}</div>
+										<div class="text-[10px] text-zinc-400 truncate">{exp.role_title || 'Consultant Specialist'}</div>
+									</div>
+									{#if isExpSelected}
+										<span class="text-blue-400 text-xs shrink-0 font-bold">✓</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
 
 				<!-- Calendar with arrows around month name -->
 				<div class="px-6 pb-8">
@@ -470,31 +660,100 @@
 							{bookingError}
 						</div>
 					{/if}
-					<h2 class="text-lg font-semibold text-white mb-2 text-center">Enter Details</h2>
-					<p class="text-sm text-zinc-400 text-center mb-6">
+					<div class="flex items-center justify-between mb-2">
+						<h2 class="text-lg font-semibold text-white">Enter Details</h2>
+						{#if mobileIsComplimentary}
+							<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+								🎁 Complimentary
+							</span>
+						{:else}
+							<span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-blue-500/15 text-blue-400 border border-blue-500/30">
+								₹{mobileFinalPrice}
+							</span>
+						{/if}
+					</div>
+					<p class="text-sm text-zinc-400 mb-6">
 						{selectedDate ? formatShortDate(selectedDate) : ''}{selectedSlot ? ` at ${formatTime(selectedSlot.start)}` : ''}
 					</p>
 					<form onsubmit={handleSubmit} class="space-y-4">
 						<div>
-							<label for="mobile-name" class="block text-sm font-medium text-zinc-300 mb-1.5">Name *</label>
+							<label for="mobile-name" class="block text-sm font-medium text-zinc-300 mb-1.5">Full Name *</label>
 							<input
 								type="text"
 								id="mobile-name"
 								bind:value={bookingForm.name}
 								required
+								placeholder="Your Name"
 								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm transition"
 							/>
 						</div>
 						<div>
-							<label for="mobile-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email *</label>
+							<label for="mobile-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email Address *</label>
 							<input
 								type="email"
 								id="mobile-email"
 								bind:value={bookingForm.email}
 								required
+								placeholder="you@company.com"
 								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm transition"
 							/>
 						</div>
+
+						<!-- Mobile Phone with Country Code -->
+						<div>
+							<label for="mobile-phone" class="block text-sm font-medium text-zinc-300 mb-1.5">
+								Mobile / WhatsApp (Optional)
+							</label>
+							<div class="flex rounded-xl bg-white/5 border border-white/10 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition">
+								<button
+									type="button"
+									onclick={() => (showMobileCountryModal = true)}
+									class="px-3 py-3 bg-white/[0.04] hover:bg-white/10 border-r border-white/10 flex items-center gap-1.5 text-xs text-zinc-200 transition-colors shrink-0"
+								>
+									<span>{mobileCountryFlag}</span>
+									<span class="font-mono text-xs">{bookingForm.countryCode || '+91'}</span>
+									<span class="text-[10px] text-zinc-500">▾</span>
+								</button>
+								<input
+									type="tel"
+									id="mobile-phone"
+									bind:value={bookingForm.phone}
+									placeholder="98765 43210"
+									class="flex-1 px-3 py-3 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
+								/>
+							</div>
+						</div>
+
+						<!-- Mobile Coupon Code -->
+						<div class="pt-1">
+							<label for="mobile-coupon" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+								Have a Coupon or Referral Code?
+							</label>
+							<div class="flex gap-2">
+								<input
+									type="text"
+									id="mobile-coupon"
+									bind:value={bookingForm.couponCode}
+									placeholder="e.g. VIP100"
+									class="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-mono uppercase text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+								/>
+								<button
+									type="button"
+									onclick={handleApplyMobileCoupon}
+									disabled={mobileCouponValidating || !bookingForm.couponCode?.trim()}
+									class="px-3.5 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-white border border-white/10 disabled:opacity-40"
+								>
+									{mobileCouponValidating ? '...' : 'Apply'}
+								</button>
+							</div>
+							{#if mobileCouponMessage}
+								<p class="text-xs text-emerald-400 mt-1">{mobileCouponMessage}</p>
+							{/if}
+							{#if mobileCouponError}
+								<p class="text-xs text-red-400 mt-1">✕ {mobileCouponError}</p>
+							{/if}
+						</div>
+
 						<div>
 							<label for="mobile-notes" class="block text-sm font-medium text-zinc-300 mb-1.5">
 								Additional notes
@@ -502,10 +761,24 @@
 							<textarea
 								id="mobile-notes"
 								bind:value={bookingForm.notes}
-								rows="4"
+								rows="3"
+								placeholder="Describe your project or questions..."
 								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-sm transition"
 							></textarea>
 						</div>
+
+						{#if !mobileIsComplimentary}
+							<div class="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-zinc-300 flex items-center justify-between">
+								<span>Payable Fee:</span>
+								<div class="text-right">
+									{#if mobileDiscountAmount > 0}
+										<span class="line-through text-zinc-500 mr-1.5">₹{data.eventType?.price_inr}</span>
+									{/if}
+									<span class="font-bold text-white text-sm font-mono">₹{mobileFinalPrice}</span>
+								</div>
+							</div>
+						{/if}
+
 						<button
 							type="submit"
 							disabled={bookingStatus === 'submitting'}
@@ -518,6 +791,17 @@
 				</div>
 			{/if}
 
+			{#if showMobileCountryModal}
+				<CountryCodeSelector
+					selectedDialCode={bookingForm.countryCode || '+91'}
+					onSelect={(c) => {
+						bookingForm.countryCode = c.dialCode;
+						mobileCountryFlag = c.flag;
+					}}
+					onClose={() => (showMobileCountryModal = false)}
+				/>
+			{/if}
+
 			<!-- Mobile Footer -->
 			<Footer class="px-6 pb-8" />
 		</div>
@@ -526,7 +810,7 @@
 		<div class="hidden md:flex glass-card rounded-3xl border border-white/10 shadow-2xl overflow-hidden transition-all duration-300 ease-in-out" style="width: {showForm ? '700px' : selectedDate ? '920px' : '650px'}">
 			<!-- Left Sidebar -->
 			<EventSidebar
-				user={data.user}
+				user={{ ...data.user, name: selectedExpert?.name || data.host?.name || data.user?.name, profileImage: selectedExpert?.profile_image || data.user?.profileImage }}
 				eventType={data.eventType}
 				{selectedDate}
 				{selectedSlot}
@@ -545,6 +829,9 @@
 				{#if showForm}
 					<BookingForm
 						bind:bookingForm
+						eventSlug={data.slug}
+						isFreeOnly={data.eventType?.is_free_only}
+						basePriceInr={data.eventType?.price_inr || 0}
 						{bookingStatus}
 						{bookingError}
 						{brandColor}
@@ -554,7 +841,43 @@
 				{:else}
 					<div class="flex items-stretch">
 						<div class="w-80">
-							<h2 class="text-xl font-semibold text-white mb-6">Select a Date & Time</h2>
+							<h2 class="text-xl font-semibold text-white mb-4">Select a Date & Time</h2>
+
+							<!-- Specialist Consultant Selector (Desktop) -->
+							{#if data.assignedExperts && data.assignedExperts.length > 1}
+								<div class="mb-4 p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+									<span class="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+										Select Specialist Expert *
+									</span>
+									<div class="space-y-1.5 max-h-36 overflow-y-auto scrollbar-thin pr-1">
+										{#each data.assignedExperts as exp}
+											{@const isExpSelected = selectedExpertId === exp.id}
+											<button
+												type="button"
+												onclick={() => selectExpert(exp.id)}
+												class="w-full p-2 rounded-xl border text-left flex items-center gap-2.5 transition-all {isExpSelected
+													? 'bg-blue-600/20 border-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.25)]'
+													: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
+											>
+												{#if exp.profile_image}
+													<img src={exp.profile_image} alt={exp.name} class="w-7 h-7 rounded-full object-cover shrink-0 border border-white/20" />
+												{:else}
+													<div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+														{exp.name.charAt(0)}
+													</div>
+												{/if}
+												<div class="min-w-0 flex-1">
+													<div class="text-xs font-bold truncate leading-tight">{exp.name}</div>
+													<div class="text-[9px] text-zinc-400 truncate">{exp.role_title || 'Consultant Specialist'}</div>
+												</div>
+												{#if isExpSelected}
+													<span class="text-blue-400 text-xs shrink-0 font-bold">✓</span>
+												{/if}
+											</button>
+										{/each}
+									</div>
+								</div>
+							{/if}
 
 							<BookingCalendar
 								{currentMonth}

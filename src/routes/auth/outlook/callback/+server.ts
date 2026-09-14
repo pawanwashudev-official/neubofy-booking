@@ -35,6 +35,10 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	// Clean up state
 	await env.KV.delete(`outlook_oauth_state:${state}`);
 
+	if (!env.MICROSOFT_CLIENT_ID || !env.MICROSOFT_CLIENT_SECRET) {
+		throw redirect(302, '/dashboard?error=outlook_not_configured');
+	}
+
 	try {
 		const redirectUri = `${env.APP_URL}/auth/outlook/callback`;
 

@@ -6,6 +6,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isValidEmail } from '$lib/server/validation';
+import { getSenderEmail, getReplyToEmail } from '$lib/server/email';
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const env = platform?.env;
@@ -92,7 +93,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 </html>`;
 
 		// Attempt sending email via Resend if API key available
-		const emailApiKey = env.RESEND_API_KEY || env.EMAILIT_API_KEY;
+		const emailApiKey = env.RESEND_API_KEY;
 		const emailFrom = env.EMAIL_FROM || 'booking@updates.neubofy.in';
 
 		if (emailApiKey) {
@@ -104,8 +105,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 						Authorization: `Bearer ${emailApiKey}`
 					},
 					body: JSON.stringify({
-						from: `Neubofy Consultations <${emailFrom}>`,
+						from: getSenderEmail('otp', env.EMAIL_FROM),
 						to: email,
+						reply_to: getReplyToEmail('otp', env.EMAIL_REPLY_TO),
 						subject: `${otpCode} is your Neubofy consultation verification code`,
 						html
 					})
@@ -114,7 +116,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				console.error('Failed to send OTP email via provider:', mailErr);
 			}
 		} else {
-			console.log(`[DEV OTP] Verification code for ${email} is ${otpCode}`);
+			console.warn(`[OTP] Email API not configured — OTP for ${email.substring(0, 3)}*** was generated but could not be sent.`);
 		}
 
 		return json({

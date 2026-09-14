@@ -1,6 +1,5 @@
 /**
- * Email service using Emailit API
- * https://docs.emailit.com/emails
+ * Email service using Resend API (https://resend.com)
  *
  * This is the main entry point for the email module.
  * It re-exports types, formatters, and templates, and provides send functions.
@@ -42,10 +41,92 @@ import {
 /**
  * Email configuration for sending
  */
-interface EmailConfig {
+export interface EmailConfig {
 	apiKey: string;
 	from: string;
 	replyTo?: string;
+}
+
+export type EmailPurpose =
+	| 'booking'
+	| 'reminder'
+	| 'reschedule'
+	| 'cancellation'
+	| 'otp'
+	| 'admin_notification'
+	| 'invitation';
+
+/**
+ * Derives a clean, contextual "From" header retaining the verified @updates.neubofy.in domain
+ */
+export function getSenderEmail(purpose: EmailPurpose, baseFrom?: string, hostOrOrgName?: string): string {
+	const defaultDomain = '@updates.neubofy.in';
+	let mailbox = 'booking';
+	let displayName = hostOrOrgName ? `${hostOrOrgName} via Neubofy` : 'Neubofy Consultations';
+
+	switch (purpose) {
+		case 'otp':
+			mailbox = 'otp';
+			displayName = 'Neubofy Security';
+			break;
+		case 'reminder':
+			mailbox = 'reminders';
+			displayName = 'Neubofy Reminders';
+			break;
+		case 'reschedule':
+			mailbox = 'scheduling';
+			displayName = hostOrOrgName ? `${hostOrOrgName} via Neubofy Scheduling` : 'Neubofy Scheduling';
+			break;
+		case 'cancellation':
+			mailbox = 'scheduling';
+			displayName = 'Neubofy Scheduling';
+			break;
+		case 'admin_notification':
+			mailbox = 'notifications';
+			displayName = 'Neubofy Booking Alerts';
+			break;
+		case 'invitation':
+			mailbox = 'team';
+			displayName = hostOrOrgName || 'Neubofy Team';
+			break;
+		case 'booking':
+		default:
+			mailbox = 'booking';
+			displayName = hostOrOrgName ? `${hostOrOrgName} via Neubofy` : 'Neubofy Strategy Consultations';
+			break;
+	}
+
+	// If custom non-default sender was configured in organization settings and doesn't use updates.neubofy.in
+	if (baseFrom && !baseFrom.includes('updates.neubofy.in') && baseFrom.includes('@')) {
+		// Extract raw email if it was enclosed in brackets
+		const rawEmail = baseFrom.includes('<') ? baseFrom.replace(/^.*<([^>]+)>.*$/, '$1') : baseFrom;
+		return `${displayName} <${rawEmail}>`;
+	}
+
+	return `${displayName} <${mailbox}${defaultDomain}>`;
+}
+
+/**
+ * Derives a contextual "Reply-To" address based on the intent of the email
+ */
+export function getReplyToEmail(purpose: EmailPurpose, customReplyTo?: string): string {
+	if (customReplyTo && customReplyTo.trim() && !customReplyTo.includes('example.com')) {
+		return customReplyTo.trim();
+	}
+
+	switch (purpose) {
+		case 'otp':
+		case 'cancellation':
+		case 'admin_notification':
+			return 'support@neubofy.in';
+		case 'invitation':
+			return 'contact@neubofy.in';
+		case 'booking':
+		case 'reminder':
+		case 'reschedule':
+		default:
+			return 'meet@neubofy.in';
+	}
 }
 
 export async function getOrganizationEmailConfig(
@@ -85,9 +166,9 @@ export async function sendOrganizationInvitationEmail(
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
 		body: JSON.stringify({
-			from: `${data.organizationName} <${config.from}>`,
+			from: getSenderEmail('invitation', config.from, data.organizationName),
 			to: data.inviteeEmail,
-			reply_to: config.replyTo,
+			reply_to: getReplyToEmail('invitation', config.replyTo),
 			subject: `You are invited to join ${data.organizationName}`,
 			html
 		})
@@ -96,7 +177,7 @@ export async function sendOrganizationInvitationEmail(
 }
 
 /**
- * Send booking confirmation email via Emailit API
+ * Send booking confirmation email via Resend API
  */
 export async function sendBookingEmail(
 	data: BookingEmailData,
@@ -117,9 +198,9 @@ export async function sendBookingEmail(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `${data.hostName} <${config.from}>`,
+				from: getSenderEmail('booking', config.from, data.hostName),
 				to: data.attendeeEmail,
-				reply_to: config.replyTo,
+				reply_to: getReplyToEmail('booking', config.replyTo),
 				subject,
 				text: textBody,
 				html: htmlBody
@@ -157,9 +238,9 @@ export async function sendCancellationEmail(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `${data.hostName} <${config.from}>`,
+				from: getSenderEmail('cancellation', config.from, data.hostName),
 				to: data.attendeeEmail,
-				reply_to: config.replyTo,
+				reply_to: getReplyToEmail('cancellation', config.replyTo),
 				subject,
 				html: htmlBody
 			})
@@ -196,9 +277,9 @@ export async function sendRescheduleEmail(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `${data.hostName} <${config.from}>`,
+				from: getSenderEmail('reschedule', config.from, data.hostName),
 				to: data.attendeeEmail,
-				reply_to: config.replyTo,
+				reply_to: getReplyToEmail('reschedule', config.replyTo),
 				subject,
 				html: htmlBody
 			})
@@ -236,9 +317,9 @@ export async function sendReminderEmail(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `${data.hostName} <${config.from}>`,
+				from: getSenderEmail('reminder', config.from, data.hostName),
 				to: data.attendeeEmail,
-				reply_to: config.replyTo,
+				reply_to: getReplyToEmail('reminder', config.replyTo),
 				subject,
 				html: htmlBody
 			})
@@ -272,8 +353,9 @@ export async function sendAdminNotificationEmail(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `Neubofy Booking <${config.from}>`,
+				from: getSenderEmail('admin_notification', config.from),
 				to: adminEmail,
+				reply_to: getReplyToEmail('admin_notification'),
 				subject: `New Booking: ${data.eventName} with ${data.attendeeName}`,
 				html: htmlBody
 			})
@@ -307,8 +389,9 @@ export async function sendAdminCancellationNotification(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `Neubofy Booking <${config.from}>`,
+				from: getSenderEmail('admin_notification', config.from),
 				to: adminEmail,
+				reply_to: getReplyToEmail('admin_notification'),
 				subject: `Booking Cancelled: ${data.eventName} with ${data.attendeeName}`,
 				html: htmlBody
 			})
@@ -342,8 +425,9 @@ export async function sendAdminRescheduleNotification(
 				Authorization: `Bearer ${config.apiKey}`
 			},
 			body: JSON.stringify({
-				from: `Neubofy Booking <${config.from}>`,
+				from: getSenderEmail('admin_notification', config.from),
 				to: adminEmail,
+				reply_to: getReplyToEmail('admin_notification'),
 				subject: `Booking Rescheduled: ${data.eventName} with ${data.attendeeName}`,
 				html: htmlBody
 			})

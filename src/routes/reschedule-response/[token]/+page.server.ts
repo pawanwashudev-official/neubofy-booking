@@ -160,10 +160,21 @@ export const actions: Actions = {
 				const calendarEvent = await createCalendarEvent(accessToken, {
 					summary: `${proposal.event_name} with ${proposal.attendee_name}`,
 					description: proposal.attendee_notes || '',
-					startTime: proposal.proposed_start_time,
-					endTime: proposal.proposed_end_time,
-					attendeeEmail: proposal.attendee_email,
-					hostEmail: proposal.host_email
+					start: {
+						dateTime: new Date(proposal.proposed_start_time).toISOString(),
+						timeZone: 'UTC'
+					},
+					end: {
+						dateTime: new Date(proposal.proposed_end_time).toISOString(),
+						timeZone: 'UTC'
+					},
+					attendees: [{ email: proposal.attendee_email }],
+					conferenceData: {
+						createRequest: {
+							requestId: crypto.randomUUID(),
+							conferenceSolutionKey: { type: 'hangoutsMeet' }
+						}
+					}
 				});
 
 				newGoogleEventId = calendarEvent.id;

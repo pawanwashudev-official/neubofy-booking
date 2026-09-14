@@ -161,6 +161,6 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			throw err;
 		}
 		console.error('OAuth callback error:', err);
-		throw error(500, `Authentication failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+		throw error(500, 'Authentication failed. Please try again or contact support.');
 	}
 };

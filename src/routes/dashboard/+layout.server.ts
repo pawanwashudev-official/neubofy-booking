@@ -6,7 +6,7 @@
 
 import { redirect, error } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { getAuthContext, isOrganizationAdmin, getCurrentUser } from '$lib/server/auth';
+import { getAuthContext, isOrganizationAdmin, getCurrentUser, getWorkspaceMode } from '$lib/server/auth';
 
 export const load: LayoutServerLoad = async (event) => {
 	const userId = await getCurrentUser(event);
@@ -21,7 +21,8 @@ export const load: LayoutServerLoad = async (event) => {
 			organization: null,
 			role: 'member',
 			isAdmin: false,
-			teamMembers: []
+			teamMembers: [],
+			workspaceMode: 'personal' as const
 		};
 	}
 
@@ -66,6 +67,7 @@ export const load: LayoutServerLoad = async (event) => {
 
 	const role = authContext.role;
 	const isAdmin = isOrganizationAdmin(role);
+	const workspaceMode = getWorkspaceMode(event, role);
 
 	// 3. Fetch organization
 	const orgId = authContext?.organizationId;
@@ -111,7 +113,16 @@ export const load: LayoutServerLoad = async (event) => {
 
 	return {
 		user: {
-			...user,
+			id: user.id,
+			name: user.name,
+			email: user.email,
+			slug: user.slug,
+			profile_image: user.profile_image,
+			brand_color: user.brand_color,
+			role_title: user.role_title,
+			bio: user.bio,
+			phone: user.phone,
+			is_free_consultation: user.is_free_consultation,
 			session_pricing: parsedPricing,
 			googleConnected: !!user.google_refresh_token,
 			outlookConnected: !!user.outlook_refresh_token
@@ -126,6 +137,7 @@ export const load: LayoutServerLoad = async (event) => {
 		},
 		role,
 		isAdmin,
-		teamMembers
+		teamMembers,
+		workspaceMode
 	};
 };

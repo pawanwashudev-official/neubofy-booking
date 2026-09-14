@@ -9,6 +9,14 @@ import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
 export const load: PageServerLoad = async (event) => {
 	const auth = await getAuthContext(event);
 	if (!auth) throw redirect(302, '/auth/login');
+	if (!isOrganizationAdmin(auth.role)) {
+		throw error(403, {
+			message: 'Administrator Permission Required',
+			reason: 'Analytics and team workload metrics are restricted to Organization Administrators and Super Admins.',
+			permissionNeeded: 'Administrator or Super Admin Role',
+			currentRole: auth.role === 'member' ? 'Member Expert' : auth.role
+		});
+	}
 
 	const db = event.platform?.env?.DB;
 	if (!db) {
@@ -20,9 +28,7 @@ export const load: PageServerLoad = async (event) => {
 		};
 	}
 
-	const isAdmin = isOrganizationAdmin(auth.role);
-	const userFilter = isAdmin ? '' : 'WHERE b.user_id = ?';
-	const queryParams = isAdmin ? [] : [auth.userId];
+	const queryParams: any[] = [];
 
 	try {
 		// 1. KPIs
@@ -35,9 +41,9 @@ export const load: PageServerLoad = async (event) => {
 					sum(CASE WHEN b.status = 'canceled' THEN 1 ELSE 0 END) as canceled,
 					sum(b.duration_minutes) as total_minutes
 				 FROM bookings b
-				 ${userFilter}`
+				 WHERE b.organization_id = ? OR b.organization_id = 'org_neubofy_main'`
 			)
-			.bind(...queryParams)
+			.bind(auth.organizationId || 'org_neubofy_main')
 			.first<{
 				total: number;
 				upcoming: number;
@@ -54,25 +60,23 @@ export const load: PageServerLoad = async (event) => {
 		const completionRate = total > 0 ? Math.round((completed / (completed + canceled || 1)) * 100) : 100;
 
 		// 2. Expert Stats
-		let expertStats: any[] = [];
-		if (isAdmin) {
-			const experts = await db
-				.prepare(
-					`SELECT 
-						u.id, u.name, u.email, u.role_title, u.profile_image,
-						count(b.id) as total,
-						sum(CASE WHEN b.status = 'confirmed' AND b.start_time > datetime('now') THEN 1 ELSE 0 END) as upcoming,
-						sum(CASE WHEN b.status = 'confirmed' AND b.start_time <= datetime('now') THEN 1 ELSE 0 END) as completed
-					 FROM users u
-					 JOIN organization_members om ON om.user_id = u.id
-					 LEFT JOIN bookings b ON b.user_id = u.id
-					 WHERE om.is_active = 1
-					 GROUP BY u.id
-					 ORDER BY total DESC`
-				)
-				.all();
-			expertStats = (experts.results as any[]) || [];
-		}
+		const experts = await db
+			.prepare(
+				`SELECT 
+					u.id, u.name, u.email, u.role_title, u.profile_image,
+					count(b.id) as total,
+					sum(CASE WHEN b.status = 'confirmed' AND b.start_time > datetime('now') THEN 1 ELSE 0 END) as upcoming,
+					sum(CASE WHEN b.status = 'confirmed' AND b.start_time <= datetime('now') THEN 1 ELSE 0 END) as completed
+				 FROM users u
+				 JOIN organization_members om ON om.user_id = u.id
+				 LEFT JOIN bookings b ON b.user_id = u.id
+				 WHERE om.is_active = 1 AND (om.organization_id = ? OR om.organization_id = 'org_neubofy_main')
+				 GROUP BY u.id
+				 ORDER BY total DESC`
+			)
+			.bind(auth.organizationId || 'org_neubofy_main')
+			.all();
+		const expertStats = (experts.results as any[]) || [];
 
 		// 3. Popular Services
 		const popularServices = await db
@@ -81,13 +85,13 @@ export const load: PageServerLoad = async (event) => {
 					et.id, et.name, et.category, et.slug,
 					count(b.id) as booking_count
 				 FROM event_types et
-				 LEFT JOIN bookings b ON b.event_type_id = et.id ${isAdmin ? '' : 'AND b.user_id = ?'}
-				 WHERE et.is_active = 1
+				 LEFT JOIN bookings b ON b.event_type_id = et.id
+				 WHERE et.is_active = 1 AND (et.organization_id = ? OR et.organization_id = 'org_neubofy_main')
 				 GROUP BY et.id
 				 ORDER BY booking_count DESC
 				 LIMIT 6`
 			)
-			.bind(...queryParams)
+			.bind(auth.organizationId || 'org_neubofy_main')
 			.all();
 
 		// 4. Recent Bookings
@@ -101,11 +105,11 @@ export const load: PageServerLoad = async (event) => {
 				 FROM bookings b
 				 JOIN event_types et ON et.id = b.event_type_id
 				 JOIN users u ON u.id = b.user_id
-				 ${userFilter}
+				 WHERE b.organization_id = ? OR b.organization_id = 'org_neubofy_main'
 				 ORDER BY b.created_at DESC
 				 LIMIT 15`
 			)
-			.bind(...queryParams)
+			.bind(auth.organizationId || 'org_neubofy_main')
 			.all();
 
 		return {

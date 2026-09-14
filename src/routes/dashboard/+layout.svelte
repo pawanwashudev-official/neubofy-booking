@@ -5,13 +5,17 @@
 	let { data, children }: { data: LayoutData; children: any } = $props();
 
 	let mobileMenuOpen = $state<boolean>(false);
-	let selectedViewExpertId = $state<string>('');
+	let currentMode = $state<'personal' | 'org'>(data.workspaceMode || 'personal');
 
-	$effect(() => {
-		if (data.user?.id && !selectedViewExpertId) {
-			selectedViewExpertId = data.user.id;
-		}
-	});
+	async function switchWorkspace(mode: 'personal' | 'org') {
+		currentMode = mode;
+		await fetch('/api/workspace-mode', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ mode })
+		});
+		window.location.href = `/dashboard?workspace=${mode}`;
+	}
 
 	// Role titles
 	const roleBadgeLabel = $derived(
@@ -101,98 +105,62 @@
 			</div>
 		</div>
 
-		<!-- Expert Workspace Switcher (For Admins / Owners) -->
-		{#if data.isAdmin && data.teamMembers && data.teamMembers.length > 0}
+		<!-- Dual-Mode Workspace Switcher (Admins / Owners only) -->
+		{#if data.isAdmin}
 			<div class="p-4 border-b border-white/10 bg-white/[0.02]">
-				<label for="workspace-switcher" class="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
-					Workspace Switcher
-				</label>
-				<select
-					id="workspace-switcher"
-					bind:value={selectedViewExpertId}
-					class="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-xs text-white outline-none focus:border-blue-500"
-				>
-					<option value={data.user?.id}>⚡ My Personal Workspace</option>
-					{#each data.teamMembers as member}
-						{#if member.id !== data.user?.id}
-							<option value={member.id}>
-								👤 {member.name} ({member.role_title || member.role})
-							</option>
-						{/if}
-					{/each}
-				</select>
+				<div class="flex items-center justify-between mb-2">
+					<span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+						Workspace Scope
+					</span>
+					<span class="text-[10px] font-semibold px-2 py-0.5 rounded {currentMode === 'org' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}">
+						{currentMode === 'org' ? '🏢 Org Team' : '👤 Personal'}
+					</span>
+				</div>
+
+				<div class="grid grid-cols-2 p-1 bg-black/50 border border-white/10 rounded-xl gap-1">
+					<button
+						type="button"
+						id="workspace-mode-personal"
+						onclick={() => switchWorkspace('personal')}
+						class="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all {currentMode === 'personal'
+							? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+					>
+						<span>👤</span>
+						<span>Personal</span>
+					</button>
+
+					<button
+						type="button"
+						id="workspace-mode-org"
+						onclick={() => switchWorkspace('org')}
+						class="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all {currentMode === 'org'
+							? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-md'
+							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+					>
+						<span>🏢</span>
+						<span>Org Team</span>
+					</button>
+				</div>
 			</div>
 		{/if}
 
 		<!-- Navigation Links -->
 		<div class="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-			<!-- Personal Workspace Section (For All Members) -->
-			<div>
-				<div class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-3 mb-2">
-					My Workspace
-				</div>
-				<nav class="space-y-1">
-					<a
-						href="/dashboard"
-						class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname === '/dashboard'
-							? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
-							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
-					>
-						<span>📅</span>
-						<span>My Appointments</span>
-					</a>
-
-					<a
-						href="/dashboard/availability"
-						class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/availability')
-							? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
-							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
-					>
-						<span>⏰</span>
-						<span>Working Hours & Schedule</span>
-					</a>
-
-					<a
-						href="/dashboard/calendars"
-						class="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/calendars')
-							? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
-							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
-					>
-						<div class="flex items-center gap-3">
-							<span>🔗</span>
-							<span>Google Calendar Sync</span>
-						</div>
-						{#if data.user?.googleConnected}
-							<span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-						{:else}
-							<span class="w-2 h-2 rounded-full bg-amber-400"></span>
-						{/if}
-					</a>
-
-					<a
-						href="/dashboard/profile"
-						class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/profile')
-							? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
-							: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
-					>
-						<span>👤</span>
-						<span>Profile & Session Rates</span>
-					</a>
-				</nav>
-			</div>
-
-			<!-- Organization Management Section (Admins & Super Admins) -->
-			{#if data.isAdmin}
+			{#if currentMode === 'org' && data.isAdmin}
+				<!-- Organization Workspace Controls (Admins & Super Admins) -->
 				<div>
-					<div class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-3 mb-2 flex items-center justify-between">
+					<div class="text-[10px] font-bold uppercase tracking-wider text-indigo-400 px-3 mb-2 flex items-center justify-between">
 						<span>Organization Controls</span>
-						<span class="text-[9px] px-1.5 py-0.2 rounded bg-white/10 text-zinc-400">Admin</span>
+						<span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+							Team Scope
+						</span>
 					</div>
 					<nav class="space-y-1">
 						<a
 							href="/dashboard/analytics"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/analytics')
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
 								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
 						>
 							<span>📊</span>
@@ -200,9 +168,19 @@
 						</a>
 
 						<a
+							href="/dashboard?workspace=org"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname === '/dashboard' && currentMode === 'org'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>📅</span>
+							<span>All Team Consultations</span>
+						</a>
+
+						<a
 							href="/dashboard/event-types"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/event-types')
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
 								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
 						>
 							<span>🛠</span>
@@ -210,9 +188,19 @@
 						</a>
 
 						<a
+							href="/dashboard/coupons"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/coupons')
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>🎟️</span>
+							<span>Coupons & Discounts</span>
+						</a>
+
+						<a
 							href="/dashboard/users"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/users')
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
 								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
 						>
 							<span>👥</span>
@@ -222,7 +210,7 @@
 						<a
 							href="/dashboard/organization"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/organization')
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
 								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
 						>
 							<span>🏢</span>
@@ -232,13 +220,128 @@
 						<a
 							href="/dashboard/emails"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/emails')
-								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
 								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
 						>
 							<span>✉️</span>
 							<span>Email Templates</span>
 						</a>
 					</nav>
+				</div>
+
+				<!-- Quick Personal Links inside Org Mode -->
+				<div class="pt-2 border-t border-white/5">
+					<div class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-3 mb-2">
+						My Host Settings
+					</div>
+					<nav class="space-y-1">
+						<a
+							href="/dashboard/availability"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/availability')
+								? 'bg-white/10 text-white'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>⏰</span>
+							<span>Working Hours & Schedule</span>
+						</a>
+
+						<a
+							href="/dashboard/calendars"
+							class="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/calendars')
+								? 'bg-white/10 text-white'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<div class="flex items-center gap-3">
+								<span>🔗</span>
+								<span>Calendar Sync</span>
+							</div>
+							{#if data.user?.googleConnected || data.user?.outlookConnected}
+								<span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+							{/if}
+						</a>
+
+						<a
+							href="/dashboard/profile"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/profile')
+								? 'bg-white/10 text-white'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>👤</span>
+							<span>Profile & Bio</span>
+						</a>
+					</nav>
+				</div>
+			{:else}
+				<!-- Personal Workspace Section (For All Members, or Admin in Personal Mode) -->
+				<div>
+					<div class="text-[10px] font-bold uppercase tracking-wider text-blue-400 px-3 mb-2 flex items-center justify-between">
+						<span>My Personal Workspace</span>
+						<span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold">
+							Personal Focus
+						</span>
+					</div>
+					<nav class="space-y-1">
+						<a
+							href="/dashboard?workspace=personal"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname === '/dashboard'
+								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>📅</span>
+							<span>My Appointments</span>
+						</a>
+
+						<a
+							href="/dashboard/availability"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/availability')
+								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>⏰</span>
+							<span>Working Hours & Schedule</span>
+						</a>
+
+						<a
+							href="/dashboard/calendars"
+							class="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/calendars')
+								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<div class="flex items-center gap-3">
+								<span>🔗</span>
+								<span>Google & Outlook Sync</span>
+							</div>
+							{#if data.user?.googleConnected || data.user?.outlookConnected}
+								<span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+							{:else}
+								<span class="w-2 h-2 rounded-full bg-amber-400"></span>
+							{/if}
+						</a>
+
+						<a
+							href="/dashboard/profile"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/profile')
+								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>👤</span>
+							<span>Profile & Session Rates</span>
+						</a>
+					</nav>
+
+					{#if data.isAdmin}
+						<div class="mt-4 p-3 rounded-xl bg-white/[0.02] border border-white/10 text-center">
+							<p class="text-[11px] text-zinc-400 mb-2">Want to manage team services, coupons, or settings?</p>
+							<button
+								type="button"
+								onclick={() => switchWorkspace('org')}
+								class="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5"
+							>
+								<span>🏢</span>
+								<span>Switch to Org Workspace</span>
+							</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

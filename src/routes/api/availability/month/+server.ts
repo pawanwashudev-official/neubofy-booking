@@ -1,6 +1,7 @@
 /**
  * Monthly availability API endpoint
- * Returns which dates in a month have available slots
+ * Returns which dates in a month have available slots for a specific expert.
+ * Deterministic expert resolution and expert-keyed KV caching.
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -21,31 +22,76 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const eventSlug = url.searchParams.get('event');
 	const month = url.searchParams.get('month'); // YYYY-MM
+	const expertId = url.searchParams.get('expertId') || url.searchParams.get('expert');
 
 	if (!eventSlug || !month) {
-		throw error(400, 'Missing required parameters');
+		throw error(400, 'Missing required parameters: event and month');
 	}
 
 	try {
 		const db = env.DB;
 
-		// Check cache first to avoid expensive DB/API calls
-		const cacheKey = `availability:month:${eventSlug}:${month}`;
-		const cached = await env.KV.get(cacheKey);
-		if (cached) {
-			return json(JSON.parse(cached));
+		// 1. Fetch consultation event type
+		const eventType = await db
+			.prepare(
+				`SELECT id, user_id, duration_minutes as duration, availability_calendars 
+				 FROM event_types 
+				 WHERE slug = ? AND is_active = 1 LIMIT 1`
+			)
+			.bind(eventSlug)
+			.first<{ id: string; user_id: string | null; duration: number; availability_calendars: string | null }>();
+
+		if (!eventType) {
+			throw error(404, 'Consultation service not found or inactive');
 		}
 
-		// Get the first (and only) user for single-user setup
+		// 2. Resolve target expert user deterministically
+		let targetUserId: string | null = expertId;
+		if (!targetUserId) {
+			const assigned = await db
+				.prepare(
+					`SELECT etm.user_id 
+					 FROM event_type_members etm
+					 JOIN users u ON u.id = etm.user_id
+					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
+					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
+					 LIMIT 1`
+				)
+				.bind(eventType.id, eventType.user_id || '')
+				.first<{ user_id: string }>();
+
+			targetUserId = assigned?.user_id || eventType.user_id || null;
+		}
+
+		let userQuery = 'SELECT id, slug, timezone, settings, outlook_refresh_token FROM users WHERE is_active = 1';
+		const queryParams: any[] = [];
+		if (targetUserId) {
+			userQuery += ' AND (id = ? OR slug = ?)';
+			queryParams.push(targetUserId, targetUserId);
+		} else {
+			userQuery += ' ORDER BY created_at ASC';
+		}
+		userQuery += ' LIMIT 1';
+
 		const user = await db
-			.prepare('SELECT id, slug, timezone, settings FROM users LIMIT 1')
-			.first<{ id: string; slug: string; timezone: string | null; settings: string | null }>();
+			.prepare(userQuery)
+			.bind(...queryParams)
+			.first<{ id: string; slug: string; timezone: string | null; settings: string | null; outlook_refresh_token: string | null }>();
 
 		if (!user) {
-			throw error(404, 'User not found');
+			throw error(404, 'Consultant not found');
 		}
 
-		const userTimezone = user.timezone || 'UTC';
+		// Check cache strictly keyed by expert ID to avoid cross-expert cache poisoning
+		const cacheKey = `availability:month:${eventSlug}:${user.id}:${month}`;
+		try {
+			const cached = await env.KV?.get(cacheKey);
+			if (cached) {
+				return json(JSON.parse(cached));
+			}
+		} catch {}
+
+		const userTimezone = user.timezone || 'Asia/Kolkata';
 
 		// Parse user settings for global calendar defaults
 		let userSettings: { defaultAvailabilityCalendars?: string; selectedGoogleCalendars?: string[] } = {};
@@ -55,7 +101,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			userSettings = {};
 		}
 
-		// Helper to create a Date in user's timezone
 		function createDateInTimezone(dateStr: string, timeStr: string, timezone: string): Date {
 			const [hour, minute] = timeStr.split(':').map(Number);
 			const dateTimeStr = `${dateStr}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
@@ -73,8 +118,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 			const targetDate = new Date(dateTimeStr + 'Z');
 			const parts = formatter.formatToParts(targetDate);
-			const tzHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
-			const tzMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+			const tzHour = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
+			const tzMinute = parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10);
 
 			const targetMinutes = hour * 60 + minute;
 			const actualMinutes = tzHour * 60 + tzMinute;
@@ -86,32 +131,21 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			return new Date(targetDate.getTime() - offsetMinutes * 60 * 1000);
 		}
 
-		const eventType = await db
-			.prepare('SELECT id, duration_minutes as duration, availability_calendars FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1')
-			.bind(user.id, eventSlug)
-			.first<{ id: string; duration: number; availability_calendars: string | null }>();
-
-		if (!eventType) {
-			throw error(404, 'Event type not found or inactive');
-		}
-
-		// Get calendar settings: use event type override if set, otherwise use global settings
-		const availabilityCalendars = eventType.availability_calendars || userSettings.defaultAvailabilityCalendars || 'both';
+		const availabilityCalendars = eventType.availability_calendars || userSettings.defaultAvailabilityCalendars || 'google';
 		const useGoogleCalendar = availabilityCalendars === 'google' || availabilityCalendars === 'both';
 		const useOutlookCalendar = availabilityCalendars === 'outlook' || availabilityCalendars === 'both';
 
-		// Get all availability rules for this user
+		// Get all weekly availability rules for this specific expert
 		const allRules = await db
 			.prepare(
 				`SELECT day_of_week, start_time, end_time
-				FROM availability_rules
-				WHERE user_id = ?
-				ORDER BY day_of_week, start_time`
+				 FROM availability_rules
+				 WHERE user_id = ? AND is_active = 1
+				 ORDER BY day_of_week, start_time`
 			)
 			.bind(user.id)
 			.all<{ day_of_week: number; start_time: string; end_time: string }>();
 
-		// Group rules by day of week
 		const rulesByDay = new Map<number, Array<{ start_time: string; end_time: string }>>();
 		for (const rule of allRules.results || []) {
 			if (!rulesByDay.has(rule.day_of_week)) {
@@ -123,7 +157,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		// Parse month to get date range
 		const [year, monthNum] = month.split('-').map(Number);
 		const firstDay = new Date(year, monthNum - 1, 1);
-		const lastDay = new Date(year, monthNum, 0);
+		const lastDay = new Date(year, monthNum, 0, 23, 59, 59, 999);
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
 
@@ -133,7 +167,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		// Get busy times from connected calendars for the entire month
 		let busySlots: TimeSlot[] = [];
 
-		// Fetch Google Calendar busy times (if enabled)
 		if (useGoogleCalendar) {
 			try {
 				const accessToken = await getValidAccessToken(
@@ -142,16 +175,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 					env.GOOGLE_CLIENT_ID,
 					env.GOOGLE_CLIENT_SECRET
 				);
-				// Use selected calendars if configured, otherwise query all
-				const selectedCalendars = userSettings.selectedGoogleCalendars;
-				const googleBusy = await getBusyTimes(accessToken, firstDay, lastDay, selectedCalendars);
+				const googleBusy = await getBusyTimes(accessToken, firstDay, lastDay, userSettings.selectedGoogleCalendars);
 				busySlots.push(...googleBusy);
-			} catch (err) {
-				console.error('Error fetching Google Calendar busy times:', err);
-			}
+			} catch (err) {}
 		}
 
-		// Fetch Outlook Calendar busy times (if enabled and configured)
 		if (useOutlookCalendar && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
 			try {
 				const outlookToken = await getValidOutlookAccessToken(
@@ -162,97 +190,130 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 				);
 				const outlookBusy = await getOutlookBusyTimes(outlookToken, firstDay, lastDay);
 				busySlots.push(...outlookBusy);
-			} catch (err) {
-				console.error('Error fetching Outlook Calendar busy times:', err);
-			}
+			} catch (err) {}
 		}
 
-		// Get existing bookings for this month
-		const bookings = await db
+		// Query existing confirmed bookings for this specific expert in this month
+		const monthStartIso = `${month}-01T00:00:00`;
+		const nextMonthDate = new Date(year, monthNum, 1);
+		const nextMonthIso = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01T00:00:00`;
+
+		const bookingsResult = await db
 			.prepare(
 				`SELECT start_time, end_time
-				FROM bookings
-				WHERE user_id = ? AND start_time >= ? AND start_time <= ? AND status = 'confirmed'
-				ORDER BY start_time`
+				 FROM bookings
+				 WHERE user_id = ? AND start_time >= ? AND start_time < ? AND status = 'confirmed'
+				 ORDER BY start_time`
 			)
-			.bind(user.id, firstDay.toISOString(), lastDay.toISOString())
+			.bind(user.id, monthStartIso, nextMonthIso)
 			.all<{ start_time: string; end_time: string }>();
 
-		// Combine all busy slots
 		const allBusySlots = [
 			...busySlots,
-			...bookings.results.map(b => ({ start: b.start_time, end: b.end_time }))
+			...(bookingsResult.results || []).map((b) => ({ start: b.start_time, end: b.end_time }))
 		];
 
-		// Check each day in the month
+		// Get date overrides for this month
+		const overridesResult = await db
+			.prepare(
+				`SELECT date, available, start_time, end_time
+				 FROM availability_overrides
+				 WHERE user_id = ? AND date >= ? AND date <= ?`
+			)
+			.bind(user.id, `${month}-01`, `${month}-${String(lastDay.getDate()).padStart(2, '0')}`)
+			.all<{ date: string; available: number; start_time: string | null; end_time: string | null }>();
+
+		const overridesByDate = new Map<string, { available: boolean; start_time?: string; end_time?: string }>();
+		for (const o of overridesResult.results || []) {
+			overridesByDate.set(o.date, {
+				available: o.available === 1,
+				start_time: o.start_time || undefined,
+				end_time: o.end_time || undefined
+			});
+		}
+
 		const availableDates: string[] = [];
+		const sessionDuration = eventType.duration || 30;
+		const daysInMonth = lastDay.getDate();
 
-		for (let day = 1; day <= lastDay.getDate(); day++) {
-			const date = new Date(year, monthNum - 1, day);
+		for (let day = 1; day <= daysInMonth; day++) {
+			const dateStr = `${month}-${String(day).padStart(2, '0')}`;
+			const dateObj = new Date(year, monthNum - 1, day);
 
-			// Skip dates before today or after maxDate
-			if (date < today || date > maxDate) continue;
+			// Skip past days or beyond max range
+			if (dateObj < today || dateObj > maxDate) continue;
 
-			const dayOfWeek = date.getDay();
-			const rules = rulesByDay.get(dayOfWeek);
+			// Check override first
+			if (overridesByDate.has(dateStr)) {
+				const override = overridesByDate.get(dateStr)!;
+				if (!override.available) continue;
+			}
 
-			// No availability rules for this day
-			if (!rules || rules.length === 0) continue;
+			const dayOfWeek = dateObj.getDay();
+			let dayRules = rulesByDay.get(dayOfWeek) || [];
 
-			// Check if at least one slot is available
-			const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-			let hasAvailableSlot = false;
+			// Default fallback hours if expert has not yet set custom rules (Mon-Sat 10:00 - 18:00)
+			if (dayRules.length === 0 && dayOfWeek !== 0) {
+				dayRules = [{ start_time: '10:00', end_time: '18:00' }];
+			}
 
-			for (const rule of rules) {
-				if (hasAvailableSlot) break;
+			if (dayRules.length === 0) continue;
 
-				// Create start and end times in user's timezone, converted to UTC
+			// Check if at least one available slot exists on this day
+			let hasSlot = false;
+			for (const rule of dayRules) {
 				let currentTime = createDateInTimezone(dateStr, rule.start_time, userTimezone);
 				const endTime = createDateInTimezone(dateStr, rule.end_time, userTimezone);
 
-				const slotIncrement = Math.min(30, eventType.duration);
-
-				while (currentTime < endTime && !hasAvailableSlot) {
+				while (currentTime < endTime) {
 					const slotEnd = new Date(currentTime);
-					slotEnd.setMinutes(slotEnd.getMinutes() + eventType.duration);
-
+					slotEnd.setMinutes(slotEnd.getMinutes() + sessionDuration);
 					if (slotEnd > endTime) break;
-					if (currentTime < new Date()) {
-						currentTime.setMinutes(currentTime.getMinutes() + slotIncrement);
-						continue;
+
+					// Must be in the future (at least 15 min from now)
+					if (currentTime.getTime() > Date.now() + 15 * 60 * 1000) {
+						const curStart = currentTime.getTime();
+						const curEnd = slotEnd.getTime();
+
+						const hasConflict = allBusySlots.some((busy) => {
+							const bStart = new Date(busy.start).getTime();
+							const bEnd = new Date(busy.end).getTime();
+							return (
+								(curStart >= bStart && curStart < bEnd) ||
+								(curEnd > bStart && curEnd <= bEnd) ||
+								(curStart <= bStart && curEnd >= bEnd)
+							);
+						});
+
+						if (!hasConflict) {
+							hasSlot = true;
+							break;
+						}
 					}
-
-					// Check conflicts
-					const hasConflict = allBusySlots.some(busy => {
-						const busyStart = new Date(busy.start);
-						const busyEnd = new Date(busy.end);
-						return (
-							(currentTime >= busyStart && currentTime < busyEnd) ||
-							(slotEnd > busyStart && slotEnd <= busyEnd) ||
-							(currentTime <= busyStart && slotEnd >= busyEnd)
-						);
-					});
-
-					if (!hasConflict) {
-						hasAvailableSlot = true;
-					}
-
-					currentTime.setMinutes(currentTime.getMinutes() + slotIncrement);
+					currentTime.setMinutes(currentTime.getMinutes() + Math.min(30, sessionDuration));
 				}
+				if (hasSlot) break;
 			}
 
-			if (hasAvailableSlot) {
+			if (hasSlot) {
 				availableDates.push(dateStr);
 			}
 		}
 
-		// Cache response in KV for 5 minutes
-		await env.KV.put(cacheKey, JSON.stringify({ availableDates }), { expirationTtl: 300 });
+		const responseData = {
+			availableDates,
+			timezone: userTimezone,
+			expertId: user.id
+		};
 
-		return json({ availableDates });
+		try {
+			await env.KV?.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 180 });
+		} catch {}
+
+		return json(responseData);
 	} catch (err: any) {
-		console.error('Monthly availability API error:', err);
+		console.error('Month availability error:', err);
 		if (err?.status) throw err;
-		throw error(500, 'Failed to fetch monthly availability');
+		throw error(500, 'Failed to fetch month availability');
 	}
 };

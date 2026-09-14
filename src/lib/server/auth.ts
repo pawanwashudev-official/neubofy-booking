@@ -158,7 +158,8 @@ export async function verifySessionToken(
 		const [data, signature] = token.split('.');
 		const expectedSignature = await hashString(`${data}.${secret}`);
 
-		if (signature !== expectedSignature) {
+		// Timing-safe comparison to prevent timing attacks
+		if (!timingSafeEqual(signature, expectedSignature)) {
 			return null;
 		}
 
@@ -174,6 +175,21 @@ export async function verifySessionToken(
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Timing-safe string comparison to prevent timing attacks
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	const encoder = new TextEncoder();
+	const bufA = encoder.encode(a);
+	const bufB = encoder.encode(b);
+	let result = 0;
+	for (let i = 0; i < bufA.length; i++) {
+		result |= bufA[i] ^ bufB[i];
+	}
+	return result === 0;
 }
 
 /**
@@ -198,7 +214,11 @@ export async function getCurrentUser(
 		return null;
 	}
 
-	const jwtSecret = event.platform?.env?.JWT_SECRET || 'neubofy-dev-jwt-secret-fallback-2026';
+	const jwtSecret = event.platform?.env?.JWT_SECRET;
+	if (!jwtSecret) {
+		console.error('FATAL: JWT_SECRET environment variable is not configured');
+		return null;
+	}
 	const session = await verifySessionToken(sessionToken, jwtSecret);
 	return session?.userId ?? null;
 }
@@ -247,3 +267,28 @@ export async function requireAuth(event: RequestEvent): Promise<string> {
 	}
 	return userId;
 }
+
+export type WorkspaceMode = 'personal' | 'org';
+
+export function getWorkspaceMode(event: RequestEvent, role: OrganizationRole): WorkspaceMode {
+	// Standard members can only ever access personal workspace
+	if (!isOrganizationAdmin(role)) {
+		return 'personal';
+	}
+
+	// URL query parameter takes priority if present: ?workspace=personal or ?workspace=org
+	const queryMode = event.url.searchParams.get('workspace');
+	if (queryMode === 'personal' || queryMode === 'org') {
+		return queryMode;
+	}
+
+	// Read cookie preference
+	const cookieMode = event.cookies.get('neubofy_workspace_mode');
+	if (cookieMode === 'personal' || cookieMode === 'org') {
+		return cookieMode;
+	}
+
+	// Default to 'org' for admins/owners
+	return 'org';
+}
+

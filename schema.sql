@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS event_types (
     description TEXT,
     category TEXT DEFAULT 'Decide', -- Decide, Implement, Improve, Protect & Verify, Operate
     is_free_only BOOLEAN DEFAULT 1,
+    price_inr INTEGER DEFAULT 0,
     durations_json TEXT DEFAULT '[30, 60]',
     icon_name TEXT DEFAULT 'lightbulb',
     location_type TEXT DEFAULT 'google_meet', -- google_meet, zoom, phone, in_person
@@ -174,6 +175,8 @@ CREATE TABLE IF NOT EXISTS bookings (
     reason TEXT,
     expectations TEXT,
     price_amount INTEGER DEFAULT 0,
+    discount_amount INTEGER DEFAULT 0,
+    coupon_code TEXT,
     is_paid BOOLEAN DEFAULT 0,
     email_verified BOOLEAN DEFAULT 1,
     google_event_id TEXT,
@@ -308,6 +311,29 @@ CREATE TABLE IF NOT EXISTS reschedule_proposals (
 CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_booking ON reschedule_proposals(booking_id);
 CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_token ON reschedule_proposals(response_token);
 CREATE INDEX IF NOT EXISTS idx_reschedule_proposals_status ON reschedule_proposals(status);
+
+-- Coupons table for admin/owner discount and complimentary VIP waivers
+CREATE TABLE IF NOT EXISTS coupons (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    organization_id TEXT NOT NULL DEFAULT 'org_neubofy_main',
+    code TEXT UNIQUE NOT NULL,
+    discount_type TEXT NOT NULL DEFAULT 'percentage' CHECK (discount_type IN ('percentage', 'fixed')),
+    discount_value INTEGER NOT NULL,
+    event_type_id TEXT,
+    max_uses INTEGER,
+    used_count INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT 1,
+    expires_at DATETIME,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code);
+CREATE INDEX IF NOT EXISTS idx_coupons_org ON coupons(organization_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_coupons_event ON coupons(event_type_id);
 
 -- Views for common queries
 CREATE VIEW IF NOT EXISTS active_event_types AS

@@ -9,15 +9,19 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { sendReminderEmail, getEmailTemplates, getOrganizationEmailConfig, type EmailTemplateType } from '$lib/server/email';
 
-export const GET = async ({ url, platform }: RequestEvent) => {
+export const GET = async ({ request, platform }: RequestEvent) => {
 	const env = platform?.env;
 	if (!env) {
 		throw error(500, 'Platform env not available');
 	}
 
-	// Verify cron secret (optional - for security when exposed to internet)
-	const cronSecret = url.searchParams.get('secret');
-	if (env.CRON_SECRET && cronSecret !== env.CRON_SECRET) {
+	// Verify cron secret via Authorization header (required for security)
+	const authHeader = request.headers.get('Authorization');
+	const cronSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+	if (!env.CRON_SECRET) {
+		throw error(500, 'CRON_SECRET is not configured');
+	}
+	if (cronSecret !== env.CRON_SECRET) {
 		throw error(401, 'Unauthorized');
 	}
 

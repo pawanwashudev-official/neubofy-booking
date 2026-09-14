@@ -30,7 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	const eventType = await db
 		.prepare(
 			`SELECT id, user_id, name, slug, duration_minutes as duration, durations_json,
-			        description, category, is_active, is_free_only, cover_image
+			        description, category, is_active, is_free_only, price_inr, cover_image
 			 FROM event_types
 			 WHERE id = ? OR slug = ?`
 		)
@@ -46,6 +46,7 @@ export const load: PageServerLoad = async (event) => {
 			category: string | null;
 			is_active: number;
 			is_free_only: number;
+			price_inr: number | null;
 			cover_image: string | null;
 		}>();
 
@@ -126,6 +127,9 @@ export const actions: Actions = {
 		const isActive = status === 'live' ? 1 : 0;
 		const durationsRaw = formData.getAll('durations');
 		const assignedExperts = formData.getAll('assigned_experts').map((id) => id.toString());
+		const pricingType = formData.get('pricing_type') || 'complimentary';
+		const isFreeOnly = pricingType === 'complimentary' ? 1 : 0;
+		const priceInr = isFreeOnly ? 0 : Math.max(0, parseInt((formData.get('price_inr') || '0').toString(), 10) || 0);
 
 		if (!name || !slug) {
 			return fail(400, { error: 'Service name and URL slug are required.' });
@@ -157,7 +161,7 @@ export const actions: Actions = {
 				.prepare(
 					`UPDATE event_types
 					 SET name = ?, slug = ?, duration_minutes = ?, durations_json = ?,
-					     category = ?, description = ?, is_active = ?
+					     category = ?, description = ?, is_active = ?, is_free_only = ?, price_inr = ?
 					 WHERE id = ?`
 				)
 				.bind(
@@ -168,6 +172,8 @@ export const actions: Actions = {
 					category,
 					description,
 					isActive,
+					isFreeOnly,
+					priceInr,
 					existing.id
 				)
 				.run();

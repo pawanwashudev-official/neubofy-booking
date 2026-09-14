@@ -54,6 +54,12 @@
 	// Calendar month view state
 	let currentCalendarMonth = $state<Date>(new Date());
 
+	// FAQ Accordion state for AEO
+	let openFaqIndex = $state<number | null>(null);
+	function toggleFaq(index: number) {
+		openFaqIndex = openFaqIndex === index ? null : index;
+	}
+
 	// Step 1: Select Event
 	function handleSelectEvent(event: any) {
 		selectedEvent = event;
@@ -99,7 +105,7 @@
 				`/api/availability?event=${encodeURIComponent(selectedEvent.slug)}&date=${selectedDate}&duration=${selectedDuration}${expertParam}`
 			);
 			if (res.ok) {
-				const json = await res.json();
+				const json = (await res.json()) as any;
 				slots = json.slots || [];
 				if (json.timezone) availabilityTimezone = json.timezone;
 			}
@@ -133,7 +139,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email: attendeeEmail })
 			});
-			const json = await res.json();
+			const json = (await res.json()) as any;
 			if (!res.ok) {
 				throw new Error(json.message || 'Failed to send verification code.');
 			}
@@ -166,7 +172,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email: attendeeEmail, code: otpCode.trim() })
 			});
-			const json = await res.json();
+			const json = (await res.json()) as any;
 			if (!res.ok) {
 				throw new Error(json.message || 'Verification failed. Invalid code.');
 			}
@@ -222,7 +228,7 @@
 				})
 			});
 
-			const json = await res.json();
+			const json = (await res.json()) as any;
 			if (!res.ok) {
 				throw new Error(json.message || 'Failed to confirm booking.');
 			}
@@ -294,11 +300,159 @@
 </script>
 
 <svelte:head>
-	<title>Consultations & Strategy Advisory | Neubofy™</title>
+	<title>Book Technology Strategy & Architecture Consultation | Neubofy™</title>
 	<meta
 		name="description"
-		content="Book a specialized technology consultation with Neubofy's expert members. Architecture, AI automations, systems integration, code audit, and strategy."
+		content="Book a specialized technology consultation with Neubofy. We act as your external technology department — translating business problems into architecture, AI automation, software integrations, and verified execution."
 	/>
+	<meta name="keywords" content="technology consulting, external technology department, software architecture consultation, AI automation advisory, systems integration, code audit, technology orchestration, Neubofy" />
+	<meta name="author" content="Neubofy" />
+	<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+	<link rel="canonical" href="https://booking.neubofy.in/" />
+
+	<!-- Open Graph / Facebook -->
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="Neubofy™" />
+	<meta property="og:url" content="https://booking.neubofy.in/" />
+	<meta property="og:title" content="Book Technology Strategy & Architecture Consultation | Neubofy™" />
+	<meta property="og:description" content="Your Technology Department, Without Building One. Book strategy advisory sessions on software architecture, AI automation, system integrations, and independent verification." />
+	<meta property="og:image" content="https://neubofy.in/neubofylogo.png" />
+	<meta property="og:image:alt" content="Neubofy Logo" />
+	<meta property="og:locale" content="en_US" />
+
+	<!-- Twitter Cards -->
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:site" content="@neubofy" />
+	<meta name="twitter:creator" content="@neubofy" />
+	<meta name="twitter:title" content="Book Technology Strategy Consultation | Neubofy™" />
+	<meta name="twitter:description" content="Your Technology Department, Without Building One. Schedule 1-on-1 strategy and architecture consultations with Neubofy experts." />
+	<meta name="twitter:image" content="https://neubofy.in/neubofylogo.png" />
+
+	<!-- Schema.org JSON-LD Structured Data for Organization, Service, and AEO FAQ -->
+	{@html `<script type="application/ld+json">
+	${JSON.stringify({
+		'@context': 'https://schema.org',
+		'@graph': [
+			{
+				'@type': 'Organization',
+				'@id': 'https://neubofy.in/#organization',
+				'name': 'Neubofy™',
+				'url': 'https://neubofy.in',
+				'logo': 'https://neubofy.in/neubofylogo.png',
+				'description': 'Neubofy is a technology consultancy that acts as an external technology department for businesses. We translate business problems into technology requirements, orchestrate independent specialists, and verify results before delivery.',
+				'sameAs': [
+					'https://twitter.com/neubofy',
+					'https://linkedin.com/company/neubofy',
+					'https://instagram.com/neubofy',
+					'https://t.me/neubofy'
+				],
+				'contactPoint': [
+					{
+						'@type': 'ContactPoint',
+						'email': 'meet@neubofy.in',
+						'contactType': 'consultations & appointments'
+					},
+					{
+						'@type': 'ContactPoint',
+						'email': 'support@neubofy.in',
+						'contactType': 'customer support'
+					},
+					{
+						'@type': 'ContactPoint',
+						'email': 'services@neubofy.in',
+						'contactType': 'services & delivery'
+					},
+					{
+						'@type': 'ContactPoint',
+						'email': 'contact@neubofy.in',
+						'contactType': 'general inquiries'
+					}
+				]
+			},
+			{
+				'@type': 'WebSite',
+				'@id': 'https://booking.neubofy.in/#website',
+				'url': 'https://booking.neubofy.in',
+				'name': 'Neubofy Consultation Portal',
+				'publisher': {
+					'@id': 'https://neubofy.in/#organization'
+				}
+			},
+			{
+				'@type': 'ProfessionalService',
+				'@id': 'https://booking.neubofy.in/#service',
+				'name': 'Neubofy Strategic Technology Consultation',
+				'url': 'https://booking.neubofy.in',
+				'image': 'https://neubofy.in/neubofylogo.png',
+				'provider': {
+					'@id': 'https://neubofy.in/#organization'
+				},
+				'serviceType': [
+					'Technology Strategy Consultation',
+					'Software Architecture Advisory',
+					'AI Systems & Workflow Automation',
+					'Systems Integration & APIs',
+					'Code Quality & Security Audit'
+				],
+				'areaServed': 'Global',
+				'priceRange': 'Complimentary Strategy Consultations & Advisory Tiers'
+			},
+			{
+				'@type': 'FAQPage',
+				'@id': 'https://booking.neubofy.in/#faq',
+				'mainEntity': [
+					{
+						'@type': 'Question',
+						'name': 'What is Neubofy and how does a consultation help my business?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'Neubofy functions as your external technology department. Instead of hiring an expensive in-house engineering executive or managing multiple freelancers yourself, Neubofy translates your business problem into precise technical requirements, coordinates vetted independent specialists, and independently verifies the delivered software before handover.'
+						}
+					},
+					{
+						'@type': 'Question',
+						'name': 'What technology areas can I consult on with Neubofy?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'You can consult across Neubofy\'s 5 capability pillars: (1) Decide — technology strategy, build vs buy, system architecture; (2) Implement — custom software, SaaS configuration, integrations, AI workflows; (3) Improve — legacy modernization, DevOps, performance tuning; (4) Protect & Verify — cybersecurity, code audits, QA; and (5) Operate — continuous maintenance and support.'
+						}
+					},
+					{
+						'@type': 'Question',
+						'name': 'How does Neubofy\'s 9-step orchestration model work?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'The 9-step orchestration model consists of: Understand, Evaluate, Decide, Architect, Assemble, Execute, Verify, Deliver, and Support/Evolve. We do not start with preconceived technology; we evaluate the business requirement first, select the right capabilities, and guarantee independent verification.'
+						}
+					},
+					{
+						'@type': 'Question',
+						'name': 'How does Neubofy guarantee independent verification?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'At Neubofy, the person executing or building the code is never the only person who decides it is ready for production. All delivered work undergoes an objective review against agreed architectural specifications, security criteria, and performance benchmarks prior to delivery.'
+						}
+					},
+					{
+						'@type': 'Question',
+						'name': 'Is the initial consultation free?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'Yes, Neubofy offers initial strategy consultations free of charge to understand your business objectives, review current systems, and determine whether configuration, integration, custom build, or an audit is the right approach.'
+						}
+					},
+					{
+						'@type': 'Question',
+						'name': 'How do I prepare for my consultation session?',
+						'acceptedAnswer': {
+							'@type': 'Answer',
+							'text': 'You do not need a finished technical specification. Simply bring your business goals, current bottlenecks, or details of existing tools you are using. Neubofy will guide the discussion to identify the most cost-effective and scalable technology approach.'
+						}
+					}
+				]
+			}
+		]
+	})}</script>`}
 </svelte:head>
 
 <!-- Top Navbar matching neubofy.in -->
@@ -458,6 +612,164 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- AEO & Search Engine FAQ Accordion Section -->
+			<section class="mt-24 max-w-4xl mx-auto border-t border-white/10 pt-16 animate-fade-in" aria-labelledby="faq-heading">
+				<div class="text-center mb-12">
+					<span class="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 inline-block mb-3">
+						Clarity & Expectations
+					</span>
+					<h2 id="faq-heading" class="text-2xl sm:text-4xl font-bold text-white tracking-tight mb-3">
+						Frequently Asked Questions
+					</h2>
+					<p class="text-sm sm:text-base text-zinc-400 max-w-xl mx-auto">
+						Everything you need to know about Neubofy's technology department model, consultation process, and independent verification.
+					</p>
+				</div>
+
+				<div class="space-y-4">
+					<!-- FAQ Item 1 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(0)}
+							aria-expanded={openFaqIndex === 0}
+						>
+							<span>What is Neubofy and how does an external technology department work?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 0 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 0}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								Neubofy functions as your complete external technology department. Instead of hiring an expensive full-time engineering executive or managing multiple freelancers yourself, Neubofy translates your core business problem into precise technical requirements, coordinates vetted independent specialists, and independently verifies the delivered software before handover.
+							</div>
+						{/if}
+					</div>
+
+					<!-- FAQ Item 2 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(1)}
+							aria-expanded={openFaqIndex === 1}
+						>
+							<span>What technology domains do Neubofy consultations cover?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 1 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 1}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								Our consultations span Neubofy's 5 capability pillars:
+								<ul class="list-disc pl-5 mt-2 space-y-1.5 text-zinc-300">
+									<li><strong class="text-white">DECIDE:</strong> Technology strategy, build vs. buy analysis, software architecture.</li>
+									<li><strong class="text-white">IMPLEMENT:</strong> Custom software development, SaaS configuration, API integrations, and AI workflow automation.</li>
+									<li><strong class="text-white">IMPROVE:</strong> Legacy system modernization, cloud DevOps, database performance tuning.</li>
+									<li><strong class="text-white">PROTECT & VERIFY:</strong> Cybersecurity reviews, code quality audits, QA, and architecture verification.</li>
+									<li><strong class="text-white">OPERATE:</strong> Ongoing maintenance, SLA uptime support, and continuous systems evolution.</li>
+								</ul>
+							</div>
+						{/if}
+					</div>
+
+					<!-- FAQ Item 3 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(2)}
+							aria-expanded={openFaqIndex === 2}
+						>
+							<span>What is the 9-step orchestration workflow?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 2 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 2}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								We believe building software is not the same as solving a business problem. Our 9-step orchestration workflow ensures optimal outcomes: (1) Understand, (2) Evaluate, (3) Decide, (4) Architect, (5) Assemble specialists, (6) Execute, (7) Independently Verify, (8) Deliver, and (9) Support & Evolve. We never start with predetermined technology—we start with your business problem.
+							</div>
+						{/if}
+					</div>
+
+					<!-- FAQ Item 4 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(3)}
+							aria-expanded={openFaqIndex === 3}
+						>
+							<span>How does Neubofy's independent verification protect my business?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 3 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 3}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								At Neubofy, the specialist or developer who writes the code is never the only person who decides it is ready for production. Every deliverable is independently audited by Neubofy analysts against agreed functional requirements, security best practices, and performance standards before delivery.
+							</div>
+						{/if}
+					</div>
+
+					<!-- FAQ Item 5 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(4)}
+							aria-expanded={openFaqIndex === 4}
+						>
+							<span>Is the initial strategy consultation free?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 4 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 4}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								Yes, all initial strategy consultations are currently 100% complimentary. We examine your current tech stack, operational pain points, and strategic goals to provide you with actionable recommendations on the most efficient technical path.
+							</div>
+						{/if}
+					</div>
+
+					<!-- FAQ Item 6 -->
+					<div class="glass-card rounded-2xl border border-white/10 overflow-hidden transition-colors">
+						<button
+							type="button"
+							class="w-full px-6 py-5 text-left flex items-center justify-between gap-4 text-white font-medium text-base sm:text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+							onclick={() => toggleFaq(5)}
+							aria-expanded={openFaqIndex === 5}
+						>
+							<span>What do I need to prepare before my consultation?</span>
+							<span class="text-zinc-400 text-xl shrink-0 transition-transform {openFaqIndex === 5 ? 'rotate-45' : ''}">+</span>
+						</button>
+						{#if openFaqIndex === 5}
+							<div class="px-6 pb-5 text-sm sm:text-base text-zinc-400 leading-relaxed border-t border-white/5 pt-4 animate-fade-in">
+								You do not need a completed technical specification. Simply bring your business goals, a summary of your current workflow or bottlenecks, and any existing systems you use. Neubofy translates your requirements into clear technical architecture during the session.
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Official Portals Quick Links -->
+				<div class="mt-12 p-6 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+					<div>
+						<h4 class="text-sm font-semibold text-white">Have an immediate project scope ready?</h4>
+						<p class="text-xs text-zinc-400 mt-0.5">Submit project requirements directly or contact our enterprise desk.</p>
+					</div>
+					<div class="flex flex-wrap items-center justify-center gap-3">
+						<a
+							href="https://neubofy.in/order"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-semibold border border-white/10 transition-colors"
+						>
+							Start a Project ↗
+						</a>
+						<a
+							href="https://neubofy.zohodesk.in/portal"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="px-4 py-2 rounded-lg bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-semibold border border-white/10 transition-colors"
+						>
+							Help Centre ↗
+						</a>
+					</div>
+				</div>
+			</section>
 		{/if}
 
 		<!-- ========================================================= -->
@@ -536,7 +848,7 @@
 									<!-- Session Durations & Free Badge -->
 									<div class="w-full sm:w-auto flex flex-col items-end gap-3 shrink-0">
 										<div class="flex flex-wrap gap-2">
-											{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d) => ({ duration: d, price: 0 })) as tier}
+											{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d: any) => ({ duration: d, price: 0 })) as tier}
 												<button
 													type="button"
 													onclick={() => handleSelectExpert(expert, tier.duration)}

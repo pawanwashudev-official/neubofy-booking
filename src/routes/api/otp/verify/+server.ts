@@ -37,6 +37,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		const db = env.DB;
 
+		// Check for brute-force lockout: max 5 wrong attempts per email
+		const latestChallenge = await db
+			.prepare(
+				`SELECT attempts FROM email_verifications 
+				 WHERE email = ? AND verified_at IS NULL AND expires_at > datetime('now')
+				 ORDER BY created_at DESC LIMIT 1`
+			)
+			.bind(email)
+			.first<{ attempts: number }>();
+
+		if (latestChallenge && latestChallenge.attempts >= 5) {
+			throw error(429, 'Too many incorrect attempts. Please request a new verification code.');
+		}
+
 		// Check for valid unexpired pending challenge
 		const pendingRecord = await db
 			.prepare(
@@ -62,7 +76,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		}
 
 		// Generate signed verification token
-		const secret = env.JWT_SECRET || 'neubofy-booking-secret-salt-2026';
+		const secret = env.JWT_SECRET;
+		if (!secret) {
+			throw error(500, 'Server configuration error');
+		}
 		const verificationToken = await generateSignedToken(email, secret);
 
 		// Mark verified in DB

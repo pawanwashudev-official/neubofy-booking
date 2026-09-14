@@ -1,11 +1,12 @@
 /**
  * Booking page for a specific organization event type.
+ * Returns event details, pricing, and all assigned expert specialists.
  */
 
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ params, platform }) => {
+export const load: PageServerLoad = async ({ params, platform, url }) => {
 	const env = platform?.env;
 	if (!env) {
 		throw error(500, 'Platform env not available');
@@ -15,15 +16,16 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 
 	try {
 		const organization = await db
-			.prepare('SELECT id, slug, name, profile_image, brand_color FROM organizations ORDER BY created_at LIMIT 1')
-			.first<{ id: string; slug: string; name: string; profile_image: string | null; brand_color: string | null }>();
+			.prepare('SELECT id, slug, name, profile_image, brand_color, contact_email FROM organizations ORDER BY created_at LIMIT 1')
+			.first<{ id: string; slug: string; name: string; profile_image: string | null; brand_color: string | null; contact_email: string | null }>();
 
 		if (!organization) throw error(404, 'Organization not found');
 
 		const eventType = await db
 			.prepare(
-				`SELECT et.id, et.slug, et.name, et.duration_minutes as duration, et.description,
-					et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
+				`SELECT et.id, et.slug, et.name, et.duration_minutes as duration, et.durations_json,
+					et.description, et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
+					et.is_free_only, et.price_inr, et.category,
 					u.name as host_name, u.email as host_email, u.settings as host_settings,
 					u.outlook_refresh_token
 				 FROM event_types et
@@ -38,11 +40,15 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 				slug: string;
 				name: string;
 				duration: number;
+				durations_json: string | null;
 				description: string | null;
 				is_active: number;
 				cover_image: string | null;
 				invite_calendar: string | null;
 				host_user_id: string | null;
+				is_free_only: number;
+				price_inr: number | null;
+				category: string | null;
 				host_name: string | null;
 				host_email: string | null;
 				host_settings: string | null;
@@ -51,23 +57,66 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 
 		if (!eventType) throw error(404, 'Event type not found or inactive');
 
-		// If no direct host_user_id, resolve from assigned event_type_members
-		if (!eventType.host_user_id) {
-			const member = await db
-				.prepare(
-					`SELECT u.id as host_user_id, u.name as host_name, u.email as host_email,
-					        u.settings as host_settings, u.outlook_refresh_token
-					 FROM event_type_members etm
-					 JOIN users u ON u.id = etm.user_id
-					 WHERE etm.event_type_id = ? AND etm.is_active = 1
-					 LIMIT 1`
-				)
-				.bind(eventType.id)
-				.first<{ host_user_id: string; host_name: string; host_email: string; host_settings: string | null; outlook_refresh_token: string | null }>();
+		// Fetch all assigned active specialists for this consultation service (deterministic order)
+		const membersResult = await db
+			.prepare(
+				`SELECT u.id, u.name, u.email, u.slug, u.profile_image, u.role_title, u.bio,
+				        u.session_pricing, u.brand_color, u.timezone
+				 FROM event_type_members etm
+				 JOIN users u ON u.id = etm.user_id
+				 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
+				 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC`
+			)
+			.bind(eventType.id, eventType.host_user_id || '')
+			.all();
 
-			if (member) {
-				Object.assign(eventType, member);
+		let assignedExperts = ((membersResult.results as any[]) || []).map((exp) => {
+			let parsedPricing = [];
+			try {
+				parsedPricing = exp.session_pricing ? JSON.parse(exp.session_pricing) : [];
+			} catch {}
+			return {
+				...exp,
+				session_pricing: parsedPricing
+			};
+		});
+
+		// Fallback to legacy creator user if no junction entries exist
+		if (assignedExperts.length === 0 && eventType.host_user_id) {
+			const creator = await db
+				.prepare('SELECT id, name, email, slug, profile_image, role_title, bio, session_pricing, brand_color, timezone FROM users WHERE id = ? AND is_active = 1')
+				.bind(eventType.host_user_id)
+				.first<any>();
+
+			if (creator) {
+				let parsedPricing = [];
+				try {
+					parsedPricing = creator.session_pricing ? JSON.parse(creator.session_pricing) : [];
+				} catch {}
+				assignedExperts = [{ ...creator, session_pricing: parsedPricing }];
 			}
+		}
+
+		// Fallback to first active user if still empty
+		if (assignedExperts.length === 0) {
+			const anyUser = await db
+				.prepare('SELECT id, name, email, slug, profile_image, role_title, bio, session_pricing, brand_color, timezone FROM users WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1')
+				.first<any>();
+			if (anyUser) {
+				let parsedPricing = [];
+				try {
+					parsedPricing = anyUser.session_pricing ? JSON.parse(anyUser.session_pricing) : [];
+				} catch {}
+				assignedExperts = [{ ...anyUser, session_pricing: parsedPricing }];
+			}
+		}
+
+		// Check if URL specifies an expert: ?expert=...
+		const requestedExpertId = url.searchParams.get('expert');
+		let defaultExpert = assignedExperts[0] || null;
+		if (requestedExpertId) {
+			const found = assignedExperts.find((e) => e.id === requestedExpertId || e.slug === requestedExpertId);
+			if (found) defaultExpert = found;
 		}
 
 		let hostSettings: { timeFormat?: string; defaultInviteCalendar?: string } = {};
@@ -83,16 +132,44 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 			effectiveInviteCalendar = 'google';
 		}
 
+		let parsedDurations: number[] = [30];
+		try {
+			parsedDurations = eventType.durations_json ? JSON.parse(eventType.durations_json) : [eventType.duration || 30];
+		} catch {
+			parsedDurations = [eventType.duration || 30];
+		}
+
 		return {
 			slug: eventType.slug,
-			eventType: { ...eventType, invite_calendar: effectiveInviteCalendar },
+			eventType: {
+				id: eventType.id,
+				slug: eventType.slug,
+				name: eventType.name,
+				duration: eventType.duration,
+				durations: parsedDurations,
+				description: eventType.description,
+				category: eventType.category || 'Decide',
+				is_active: eventType.is_active,
+				is_free_only: !!eventType.is_free_only,
+				price_inr: eventType.price_inr || 0,
+				cover_image: eventType.cover_image,
+				invite_calendar: effectiveInviteCalendar
+			},
 			user: {
 				name: organization.name,
 				profileImage: organization.profile_image,
 				brandColor: organization.brand_color || '#3b82f6',
 				timeFormat: hostSettings.timeFormat || '12h'
 			},
-			host: { name: eventType.host_name, email: eventType.host_email }
+			host: {
+				id: defaultExpert?.id,
+				name: defaultExpert?.name || eventType.host_name || organization.name,
+				roleTitle: defaultExpert?.role_title || 'Technology Consultant',
+				profileImage: defaultExpert?.profile_image,
+				bio: defaultExpert?.bio
+			},
+			assignedExperts,
+			defaultExpertId: defaultExpert?.id || ''
 		};
 	} catch (err: any) {
 		console.error('Booking page load error:', err);

@@ -28,7 +28,7 @@
 				body: JSON.stringify({ name, slug, profileImage, brandColor, timezone, contactEmail, replyToEmail, emailFrom })
 			});
 			if (!response.ok) {
-				const json = await response.json().catch(() => ({}));
+				const json = (await response.json().catch(() => ({}))) as any;
 				throw new Error(json.message || 'Unable to save organization settings');
 			}
 			message = 'Organization settings saved successfully.';

@@ -49,15 +49,22 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			throw error(404, 'Consultation service not found or inactive');
 		}
 
-		// 2. Resolve target expert user
-		let targetUserId = expertId;
+		// 2. Resolve target expert user deterministically
+		let targetUserId: string | null = expertId;
 		if (!targetUserId) {
-			// Find assigned member
 			const assigned = await db
-				.prepare('SELECT user_id FROM event_type_members WHERE event_type_id = ? AND is_active = 1 LIMIT 1')
-				.bind(eventType.id)
+				.prepare(
+					`SELECT etm.user_id 
+					 FROM event_type_members etm
+					 JOIN users u ON u.id = etm.user_id
+					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
+					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
+					 LIMIT 1`
+				)
+				.bind(eventType.id, eventType.user_id || '')
 				.first<{ user_id: string }>();
-			targetUserId = assigned?.user_id || eventType.user_id || undefined;
+
+			targetUserId = assigned?.user_id || eventType.user_id || null;
 		}
 
 		let userQuery = 'SELECT id, slug, timezone, settings FROM users WHERE is_active = 1';
@@ -65,6 +72,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		if (targetUserId) {
 			userQuery += ' AND (id = ? OR slug = ?)';
 			params.push(targetUserId, targetUserId);
+		} else {
+			userQuery += ' ORDER BY created_at ASC';
 		}
 		userQuery += ' LIMIT 1';
 
@@ -182,14 +191,18 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		}
 
 		// Query existing confirmed bookings for this expert
+		const nextDayDate = new Date(requestedDate);
+		nextDayDate.setDate(nextDayDate.getDate() + 1);
+		const nextDayStr = nextDayDate.toISOString().split('T')[0];
+
 		const bookings = await db
 			.prepare(
 				`SELECT start_time, end_time
 				 FROM bookings
-				 WHERE user_id = ? AND DATE(start_time) = ? AND status = 'confirmed'
+				 WHERE user_id = ? AND (DATE(start_time) = ? OR (start_time >= ? AND start_time < ?)) AND status = 'confirmed'
 				 ORDER BY start_time`
 			)
-			.bind(user.id, date)
+			.bind(user.id, date, `${date}T00:00:00`, `${nextDayStr}T00:00:00`)
 			.all<{ start_time: string; end_time: string }>();
 
 		const allBusySlots = [

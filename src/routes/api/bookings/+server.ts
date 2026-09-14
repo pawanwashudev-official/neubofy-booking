@@ -56,6 +56,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			reason?: string;
 			expectations?: string;
 			notes?: string;
+			couponCode?: string;
 			verificationToken?: string;
 			turnstileToken?: string;
 			timezone?: string;
@@ -74,6 +75,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			reason,
 			expectations,
 			notes,
+			couponCode,
 			verificationToken,
 			turnstileToken,
 			timezone
@@ -91,7 +93,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		// Email OTP Verification check
 		let isEmailVerified = 1;
-		const secret = env.JWT_SECRET || 'neubofy-booking-secret-salt-2026';
+		const secret = env.JWT_SECRET;
+		if (!secret) {
+			throw error(500, 'Server configuration error: JWT_SECRET is not set');
+		}
 		if (verificationToken) {
 			const isValid = await verifyOtpToken(verificationToken, secret, attendeeEmail);
 			if (!isValid) {
@@ -140,32 +145,39 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		// Fetch consultation event type
 		const eventType = await db
 			.prepare(
-				`SELECT id, user_id, name, duration_minutes as duration, description, invite_calendar 
+				`SELECT id, user_id, name, duration_minutes as duration, description, invite_calendar, is_free_only, price_inr 
 				 FROM event_types 
 				 WHERE slug = ? AND is_active = 1 LIMIT 1`
 			)
 			.bind(eventSlug)
-			.first<{ id: string; user_id: string | null; name: string; duration: number; description: string | null; invite_calendar: string | null }>();
+			.first<{ id: string; user_id: string | null; name: string; duration: number; description: string | null; invite_calendar: string | null; is_free_only: number; price_inr: number | null }>();
 
 		if (!eventType) {
 			throw error(404, 'Consultation service not found or inactive');
 		}
 
-		// Determine target expert user ID
+		// Determine target expert user ID deterministically
 		let hostUserId = expertUserId;
 		if (!hostUserId) {
-			// Find assigned member
 			const assigned = await db
-				.prepare('SELECT user_id FROM event_type_members WHERE event_type_id = ? AND is_active = 1 LIMIT 1')
-				.bind(eventType.id)
+				.prepare(
+					`SELECT etm.user_id 
+					 FROM event_type_members etm
+					 JOIN users u ON u.id = etm.user_id
+					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
+					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
+					 LIMIT 1`
+				)
+				.bind(eventType.id, eventType.user_id || '')
 				.first<{ user_id: string }>();
+
 			hostUserId = assigned?.user_id || eventType.user_id || undefined;
 		}
 
 		if (!hostUserId) {
 			// Fall back to any active member/owner
 			const fallbackUser = await db
-				.prepare('SELECT id FROM users WHERE is_active = 1 ORDER BY created_at LIMIT 1')
+				.prepare('SELECT id FROM users WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1')
 				.first<{ id: string }>();
 			hostUserId = fallbackUser?.id;
 		}
@@ -307,6 +319,69 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			}
 		}
 
+		// Pricing & Coupon Verification
+		const isFreeOnly = Boolean(eventType.is_free_only);
+		const originalPrice = isFreeOnly ? 0 : (eventType.price_inr || 0);
+		let finalPrice = originalPrice;
+		let discountAmount = 0;
+		let validCouponCode: string | null = null;
+
+		if (!isFreeOnly && originalPrice > 0) {
+			if (couponCode?.trim()) {
+				const cCode = couponCode.trim().toUpperCase();
+				const coupon = await db
+					.prepare(
+						`SELECT id, code, discount_type, discount_value, event_type_id, max_uses, used_count, expires_at
+						 FROM coupons
+						 WHERE UPPER(code) = ? AND is_active = 1`
+					)
+					.bind(cCode)
+					.first<{
+						id: string;
+						code: string;
+						discount_type: 'percentage' | 'fixed';
+						discount_value: number;
+						event_type_id: string | null;
+						max_uses: number | null;
+						used_count: number;
+						expires_at: string | null;
+					}>();
+
+				if (!coupon) {
+					throw error(400, 'Invalid coupon code.');
+				}
+
+				if (coupon.event_type_id && coupon.event_type_id !== eventType.id) {
+					throw error(400, 'Coupon is not valid for this consultation service.');
+				}
+
+				if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
+					throw error(400, 'Coupon has reached its maximum limit.');
+				}
+
+				if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+					throw error(400, 'Coupon code has expired.');
+				}
+
+				if (coupon.discount_type === 'percentage') {
+					discountAmount = Math.round((originalPrice * coupon.discount_value) / 100);
+				} else {
+					discountAmount = coupon.discount_value;
+				}
+				discountAmount = Math.min(originalPrice, Math.max(0, discountAmount));
+				finalPrice = Math.max(0, originalPrice - discountAmount);
+				validCouponCode = coupon.code;
+
+				// Atomically increment coupon usage
+				await db
+					.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?')
+					.bind(coupon.id)
+					.run();
+			} else {
+				throw error(402, 'This consultation requires a valid coupon waiver code or payment.');
+			}
+		}
+
 		// Insert booking record into database
 		const bookingId = crypto.randomUUID();
 		await db
@@ -314,9 +389,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				`INSERT INTO bookings (
 					id, organization_id, user_id, event_type_id, start_time, end_time, duration_minutes,
 					attendee_name, attendee_email, attendee_phone, attendee_notes, goal, reason, expectations,
-					price_amount, is_paid, email_verified, status,
+					price_amount, discount_amount, coupon_code, is_paid, email_verified, status,
 					google_event_id, outlook_event_id, meeting_url, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
 			)
 			.bind(
 				bookingId,
@@ -333,8 +408,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				goal || null,
 				reason || null,
 				expectations || null,
-				0, // price_amount
-				0, // is_paid
+				finalPrice,
+				discountAmount,
+				validCouponCode,
+				finalPrice === 0 ? 1 : 0, // is_paid
 				isEmailVerified, // email_verified
 				googleEventId || null,
 				outlookEventId || null,
@@ -342,15 +419,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			)
 			.run();
 
-		// Invalidate availability cache
+		// Invalidate availability cache (all duration variants for this date)
 		try {
 			const dateStr = startDateTime.toISOString().split('T')[0];
-			const cacheKey = `availability:${eventSlug}:${user.id}:${dateStr}`;
-			await env.KV?.delete(cacheKey);
+			const prefix = `availability:${eventSlug}:${user.id}:`;
+			const listed = await env.KV?.list({ prefix });
+			if (listed?.keys) {
+				const keysToDelete = listed.keys.filter(k => k.name.endsWith(`:${dateStr}`));
+				await Promise.all(keysToDelete.map(k => env.KV?.delete(k.name)));
+			}
 		} catch {}
 
 		// Send booking confirmation email via Resend
-		const emailApiKey = env.RESEND_API_KEY || env.EMAILIT_API_KEY;
+		const emailApiKey = env.RESEND_API_KEY;
 		if (emailApiKey) {
 			try {
 				let timeFormat: '12h' | '24h' = '12h';

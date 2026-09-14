@@ -36,5 +36,10 @@ export {
 	getEmailTemplates,
 	isEmailEnabled,
 	getOrganizationEmailConfig,
-	sendOrganizationInvitationEmail
+	sendOrganizationInvitationEmail,
+	// Contextual routing helpers
+	getSenderEmail,
+	getReplyToEmail,
+	type EmailPurpose,
+	type EmailConfig
 } from './email/index';

@@ -5,7 +5,7 @@
 
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getCurrentUser } from '$lib/server/auth';
-import { getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
+import { getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled, getSenderEmail, getReplyToEmail } from '$lib/server/email';
 
 export const POST = async (event: RequestEvent) => {
 	const env = event.platform?.env;
@@ -279,9 +279,9 @@ async function sendRescheduleProposalEmail(data: RescheduleProposalEmailData, co
 			Authorization: `Bearer ${config.apiKey}`
 		},
 		body: JSON.stringify({
-			from: `${data.hostName} <${config.from}>`,
+			from: getSenderEmail('reschedule', config.from, data.hostName),
 			to: data.attendeeEmail,
-			reply_to: config.replyTo,
+			reply_to: getReplyToEmail('reschedule', config.replyTo),
 			subject: `Reschedule Request: ${data.eventName} with ${data.hostName}`,
 			html: htmlBody
 		})

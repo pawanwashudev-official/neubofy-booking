@@ -57,7 +57,7 @@
 				})
 			});
 
-			const json = await res.json();
+			const json = (await res.json()) as any;
 			if (!res.ok) {
 				throw new Error(json.message || 'Failed to save profile');
 			}

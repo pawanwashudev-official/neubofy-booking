@@ -64,7 +64,7 @@
 					reason: cancelReason.trim() || 'Canceled by host'
 				})
 			});
-			const json = await res.json();
+			const json = (await res.json()) as any;
 			if (!res.ok) throw new Error(json.message || 'Failed to cancel appointment');
 
 			bookings = bookings.map((b) => (b.id === cancellingBookingId ? { ...b, status: 'canceled' } : b));
@@ -87,11 +87,16 @@
 	<!-- Workspace Topbar -->
 	<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 		<div>
-			<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-				{data.canManageOrganization ? 'Organization Consultations' : 'My Appointments'}
+			<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+				<span>{data.workspaceMode === 'org' ? 'Organization Consultations' : 'My Appointments'}</span>
+				<span class="text-xs font-semibold px-2.5 py-0.5 rounded-full {data.workspaceMode === 'org' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}">
+					{data.workspaceMode === 'org' ? 'Team Scope' : 'Personal Scope'}
+				</span>
 			</h1>
 			<p class="text-sm text-zinc-400 mt-1">
-				Manage scheduled strategy sessions, join Google Meet rooms, and review client intake data.
+				{data.workspaceMode === 'org' 
+					? 'Viewing all team consultations across the organization. Switch to Personal mode for your assigned schedule.' 
+					: 'Manage your scheduled personal strategy sessions, join Google Meet rooms, and review client intake data.'}
 			</p>
 		</div>
 
@@ -178,6 +183,16 @@
 								: 'bg-red-500/15 text-red-400 border border-red-500/30'}">
 								{booking.status}
 							</span>
+							{#if booking.coupon_code}
+								<span class="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+									🎟️ {booking.coupon_code} {#if booking.discount_amount}(-₹{booking.discount_amount}){/if}
+								</span>
+							{/if}
+							{#if booking.final_price !== undefined && booking.final_price !== null}
+								<span class="px-2 py-0.5 text-[10px] font-bold rounded {booking.final_price === 0 ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-purple-500/15 text-purple-300 border border-purple-500/30'}">
+									{booking.final_price === 0 ? 'Complimentary' : `₹${booking.final_price}`}
+								</span>
+							{/if}
 						</div>
 
 						<!-- Service Title -->
