@@ -7,6 +7,8 @@
 		name: string;
 		email: string;
 		role: 'owner' | 'admin' | 'member';
+		role_title?: string;
+		profile_image?: string | null;
 		is_active: number;
 		joined_at: string;
 		last_login_at: string | null;
@@ -28,30 +30,34 @@
 	async function loadMembers() {
 		try {
 			const response = await fetch('/api/organization/users');
-			if (!response.ok) throw new Error('Failed to load organization users');
-			members = (await response.json() as { members: Member[] }).members;
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'Failed to load organization users';
+			if (!response.ok) throw new Error('Failed to load organization team members');
+			const json = (await response.json()) as { members: Member[] };
+			members = json.members || [];
+		} catch (error: any) {
+			errorMessage = error.message || 'Failed to load team members';
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function removeMember(member: Member) {
-		if (!confirm(`Delete ${member.name} and all of their bookings, event types, availability, and account data? This cannot be undone.`)) return;
-		const confirmation = prompt(`Type ${member.name} to confirm deletion.`);
+		if (!confirm(`Remove ${member.name} from the organization? This will delete their assigned sessions.`)) return;
+		const confirmation = prompt(`Type ${member.name} to confirm deletion:`);
 		if (confirmation !== member.name) return;
+
 		const response = await fetch('/api/organization/users', {
 			method: 'DELETE',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ userId: member.user_id, confirmation })
 		});
+
 		if (!response.ok) {
-			errorMessage = (await response.json().catch(() => ({})) as { message?: string }).message || 'Failed to delete user';
+			errorMessage = ((await response.json().catch(() => ({}))) as { message?: string }).message || 'Failed to remove user';
 			return;
 		}
 		members = members.filter((current) => current.user_id !== member.user_id);
-		successMessage = `${member.name} and all related data were deleted.`;
+		successMessage = `${member.name} was removed from the team.`;
+		setTimeout(() => (successMessage = ''), 4000);
 	}
 
 	async function toggleMember(member: Member) {
@@ -61,7 +67,7 @@
 			body: JSON.stringify({ userId: member.user_id, isActive: member.is_active !== 1 })
 		});
 		if (!response.ok) {
-			errorMessage = 'Failed to update user status';
+			errorMessage = 'Failed to update member status';
 			return;
 		}
 		member.is_active = member.is_active === 1 ? 0 : 1;
@@ -69,88 +75,186 @@
 	}
 
 	async function inviteUser() {
+		if (!inviteEmail || !inviteEmail.includes('@')) {
+			errorMessage = 'Please enter a valid email address';
+			return;
+		}
 		inviting = true;
 		errorMessage = '';
 		successMessage = '';
-		const response = await fetch('/api/organization/users', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email: inviteEmail, role: inviteRole })
-		});
-		if (!response.ok) {
-			errorMessage = (await response.json().catch(() => ({})) as { message?: string }).message || 'Failed to send invitation';
-		} else {
-			successMessage = `Invitation sent to ${inviteEmail}.`;
+
+		try {
+			const response = await fetch('/api/organization/users', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole })
+			});
+			if (!response.ok) {
+				const json = (await response.json().catch(() => ({}))) as { message?: string };
+				throw new Error(json.message || 'Failed to send team invitation');
+			}
+			successMessage = `Invitation successfully sent to ${inviteEmail}.`;
 			inviteEmail = '';
+			setTimeout(() => (successMessage = ''), 4000);
+		} catch (err: any) {
+			errorMessage = err.message || 'Error inviting member.';
+		} finally {
+			inviting = false;
 		}
-		inviting = false;
 	}
 </script>
 
-<svelte:head><title>Organization Users</title></svelte:head>
+<svelte:head>
+	<title>Team & Experts Directory | Neubofy™</title>
+</svelte:head>
 
-<div class="min-h-screen bg-gray-50">
-	<header class="border-b border-gray-200 bg-white">
-		<div class="mx-auto flex max-w-5xl items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
-			<a href="/dashboard" class="text-sm font-medium text-gray-600 hover:text-gray-900">Back to dashboard</a>
-			<div>
-				<h1 class="text-xl font-bold text-gray-900">Organization users</h1>
-				<p class="text-sm text-gray-500">Manage access to {data.organization?.name || 'your organization'}</p>
-			</div>
+<div class="p-6 sm:p-10 max-w-6xl mx-auto space-y-8 animate-fade-in">
+	<!-- Header -->
+	<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+		<div>
+			<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Team & Experts Directory</h1>
+			<p class="text-sm text-zinc-400 mt-1">
+				Manage organization consultants, invite specialists, and assign roles.
+			</p>
 		</div>
-	</header>
+	</div>
 
-	<main class="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-		{#if errorMessage}<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errorMessage}</div>{/if}
-		{#if successMessage}<div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">{successMessage}</div>{/if}
+	{#if successMessage}
+		<div class="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+			✓ {successMessage}
+		</div>
+	{/if}
+	{#if errorMessage}
+		<div class="p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold">
+			✕ {errorMessage}
+		</div>
+	{/if}
 
-		{#if data.role === 'owner'}
-			<section class="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6">
-				<h2 class="font-semibold text-blue-950">Invite a user</h2>
-				<p class="mt-1 text-sm text-blue-800">Only people invited by the organization can sign in.</p>
-				<form onsubmit={(event) => { event.preventDefault(); inviteUser(); }} class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-					<input type="email" bind:value={inviteEmail} required placeholder="person@company.com" class="rounded-md border-blue-200 bg-white px-3 py-2.5 text-sm" />
-					<select bind:value={inviteRole} class="rounded-md border-blue-200 bg-white px-3 py-2.5 text-sm">
-						<option value="member">Member</option>
-						<option value="admin">Admin</option>
-					</select>
-					<button disabled={inviting} class="rounded-md bg-blue-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">{inviting ? 'Sending...' : 'Send invite'}</button>
-				</form>
-			</section>
-		{/if}
+	<!-- Invite New Expert Box -->
+	<div class="glass-card rounded-2xl p-6 border border-white/10 space-y-4">
+		<div>
+			<h2 class="text-base font-bold text-white">Invite Specialist or Administrator</h2>
+			<p class="text-xs text-zinc-400 mt-0.5">
+				They will receive an invitation email with access to connect their Google Calendar and host consultations.
+			</p>
+		</div>
 
-		<section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-			<div class="border-b border-gray-200 px-4 py-4 sm:px-6">
-				<h2 class="font-semibold text-gray-900">Members</h2>
-				<p class="mt-1 text-sm text-gray-500">Deleting a member permanently removes their account and associated data.</p>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				inviteUser();
+			}}
+			class="flex flex-col sm:flex-row gap-3"
+		>
+			<input
+				type="email"
+				bind:value={inviteEmail}
+				placeholder="specialist@neubofy.in"
+				required
+				class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
+			/>
+
+			<select
+				bind:value={inviteRole}
+				class="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
+			>
+				<option value="member">Expert Member</option>
+				<option value="admin">Administrator</option>
+			</select>
+
+			<button
+				type="submit"
+				disabled={inviting}
+				class="btn-electric px-6 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50"
+			>
+				{inviting ? 'Sending Invite...' : 'Send Invitation →'}
+			</button>
+		</form>
+	</div>
+
+	<!-- Team Members List -->
+	<div class="glass-card rounded-2xl p-6 sm:p-7 border border-white/10">
+		<h2 class="text-base font-bold text-white mb-1">Active Team Members ({members.length})</h2>
+		<p class="text-xs text-zinc-400 mb-6">List of experts authorized to provide advisory sessions.</p>
+
+		{#if loading}
+			<div class="space-y-3">
+				{#each Array(3) as _}
+					<div class="p-4 rounded-xl skeleton-shimmer border border-white/5 h-20 w-full"></div>
+				{/each}
 			</div>
-			{#if loading}
-				<div class="p-8 text-center text-sm text-gray-500">Loading users...</div>
-			{:else}
-				<div class="divide-y divide-gray-100">
-					{#each members as member}
-						<div class="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-							<div class="min-w-0">
-								<div class="flex flex-wrap items-center gap-2">
-									<h3 class="font-medium text-gray-900">{member.name}</h3>
-									<span class="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">{member.role}</span>
-									{#if member.is_active !== 1}<span class="rounded-full bg-red-100 px-2 py-1 text-xs text-red-700">Inactive</span>{/if}
-								</div>
-								<p class="truncate text-sm text-gray-500">{member.email}</p>
-								<p class="mt-1 text-xs text-gray-400">{member.event_count} event types · {member.booking_count} bookings</p>
-							</div>
-							{#if member.role !== 'owner'}
-								<div class="flex shrink-0 gap-2">
-									<button onclick={() => toggleMember(member)} class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-										{member.is_active === 1 ? 'Deactivate' : 'Activate'}
-									</button>
-									<button onclick={() => removeMember(member)} class="rounded-md border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50">Delete data</button>
+		{:else if members.length > 0}
+			<div class="space-y-3">
+				{#each members as member}
+					<div class="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+						<div class="flex items-center gap-4">
+							{#if member.profile_image}
+								<img
+									src={member.profile_image}
+									alt={member.name}
+									class="w-10 h-10 rounded-xl object-cover border border-white/10"
+								/>
+							{:else}
+								<div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-xs">
+									{member.name?.charAt(0) || 'M'}
 								</div>
 							{/if}
+
+							<div>
+								<div class="flex items-center gap-2">
+									<h3 class="text-xs font-bold text-white">{member.name}</h3>
+									<span class="px-2 py-0.2 rounded text-[10px] font-bold uppercase {member.role === 'owner'
+										? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+										: member.role === 'admin'
+											? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+											: 'bg-zinc-500/15 text-zinc-300 border border-zinc-500/30'}">
+										{member.role === 'owner' ? 'Super Admin' : member.role === 'admin' ? 'Admin' : 'Expert'}
+									</span>
+									{#if member.is_active === 1}
+										<span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]"></span>
+									{:else}
+										<span class="w-2 h-2 rounded-full bg-red-400"></span>
+									{/if}
+								</div>
+								<p class="text-[11px] text-zinc-400">{member.email}</p>
+							</div>
 						</div>
-					{/each}
-				</div>
-			{/if}
-		</section>
-	</main>
+
+						<!-- Stats & Controls -->
+						<div class="flex items-center gap-4 text-xs">
+							<div class="text-right hidden sm:block">
+								<span class="text-zinc-300 font-medium">{member.booking_count || 0} consultations</span>
+								<span class="text-[10px] text-zinc-500 block">Joined {new Date(member.joined_at).toLocaleDateString()}</span>
+							</div>
+
+							<button
+								type="button"
+								onclick={() => toggleMember(member)}
+								class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all {member.is_active === 1
+									? 'bg-white/5 text-zinc-300 hover:bg-white/10 border-white/10'
+									: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'}"
+							>
+								{member.is_active === 1 ? 'Suspend' : 'Activate'}
+							</button>
+
+							{#if member.role !== 'owner'}
+								<button
+									type="button"
+									onclick={() => removeMember(member)}
+									class="p-2 text-zinc-500 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors text-xs"
+									title="Remove user"
+								>
+									🗑
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<div class="py-10 text-center text-xs text-zinc-500">
+				No team members registered yet.
+			</div>
+		{/if}
+	</div>
 </div>

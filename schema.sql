@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Users table
+-- Users table (Admins and Member Experts)
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     email TEXT UNIQUE NOT NULL,
@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS users (
     profile_image TEXT,
     brand_color TEXT DEFAULT '#3b82f6',
     contact_email TEXT,
+    role_title TEXT DEFAULT 'Technology Consultant',
+    bio TEXT,
+    phone TEXT,
+    session_pricing JSON DEFAULT '[{"duration": 30, "price": 999, "label": "30 Min Strategy Consultation"}, {"duration": 60, "price": 1999, "label": "60 Min Deep Dive"}]',
+    is_free_consultation BOOLEAN DEFAULT 1,
     is_active BOOLEAN DEFAULT 1,
     last_login_at DATETIME
 );
@@ -72,10 +77,10 @@ CREATE TABLE IF NOT EXISTS organization_invitations (
 CREATE INDEX IF NOT EXISTS idx_org_invitations_email ON organization_invitations(organization_id, email, expires_at);
 CREATE INDEX IF NOT EXISTS idx_org_invitations_token ON organization_invitations(token_digest);
 
--- Event types (different meeting types a user can offer)
+-- Event types (Organization Consultation Services)
 CREATE TABLE IF NOT EXISTS event_types (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    user_id TEXT NOT NULL,
+    user_id TEXT,
     organization_id TEXT,
     name TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL DEFAULT 30,
@@ -83,26 +88,47 @@ CREATE TABLE IF NOT EXISTS event_types (
     color TEXT DEFAULT '#3b82f6',
     slug TEXT NOT NULL,
     description TEXT,
+    category TEXT DEFAULT 'Decide', -- Decide, Implement, Improve, Protect & Verify, Operate
+    is_free_only BOOLEAN DEFAULT 1,
+    durations_json TEXT DEFAULT '[30, 60]',
+    icon_name TEXT DEFAULT 'lightbulb',
     location_type TEXT DEFAULT 'google_meet', -- google_meet, zoom, phone, in_person
     location_details TEXT,
     is_active BOOLEAN DEFAULT 1,
     cover_image TEXT,
-    availability_calendars TEXT DEFAULT 'both', -- 'google', 'outlook', 'both'
-    invite_calendar TEXT DEFAULT 'google', -- 'google' or 'outlook'
+    availability_calendars TEXT DEFAULT 'google',
+    invite_calendar TEXT DEFAULT 'google',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE(user_id, slug)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE(organization_id, slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_types_user ON event_types(user_id);
-CREATE INDEX IF NOT EXISTS idx_event_types_active ON event_types(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_event_types_active ON event_types(is_active);
+CREATE INDEX IF NOT EXISTS idx_event_types_slug ON event_types(slug);
+
+-- Junction table for assigning multiple experts to an organization consultation event
+CREATE TABLE IF NOT EXISTS event_type_members (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    event_type_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    custom_pricing JSON, -- Optional custom duration & pricing packages override: [{"duration": 45, "price": 1499, "label": "..."}]
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_type_id, user_id),
+    FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_etm_event ON event_type_members(event_type_id);
+CREATE INDEX IF NOT EXISTS idx_etm_user ON event_type_members(user_id);
 
 -- Availability rules (recurring weekly schedule)
 CREATE TABLE IF NOT EXISTS availability_rules (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
     organization_id TEXT,
-    event_type_id TEXT, -- NULL means applies to all event types
+    event_type_id TEXT,
     day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0 = Sunday
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -121,7 +147,7 @@ CREATE TABLE IF NOT EXISTS availability_overrides (
     user_id TEXT NOT NULL,
     organization_id TEXT,
     date DATE NOT NULL,
-    available BOOLEAN NOT NULL, -- false = blocked, true = override with specific times
+    available BOOLEAN NOT NULL,
     start_time TIME,
     end_time TIME,
     reason TEXT,
@@ -136,12 +162,20 @@ CREATE TABLE IF NOT EXISTS bookings (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     event_type_id TEXT NOT NULL,
     organization_id TEXT,
-    user_id TEXT NOT NULL,
+    user_id TEXT NOT NULL, -- Assigned Expert Host
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
+    duration_minutes INTEGER DEFAULT 30,
     attendee_name TEXT NOT NULL,
     attendee_email TEXT NOT NULL,
+    attendee_phone TEXT,
     attendee_notes TEXT,
+    goal TEXT,
+    reason TEXT,
+    expectations TEXT,
+    price_amount INTEGER DEFAULT 0,
+    is_paid BOOLEAN DEFAULT 0,
+    email_verified BOOLEAN DEFAULT 1,
     google_event_id TEXT,
     outlook_event_id TEXT,
     meeting_url TEXT,
@@ -159,7 +193,22 @@ CREATE INDEX IF NOT EXISTS idx_bookings_event_type ON bookings(event_type_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
 CREATE INDEX IF NOT EXISTS idx_bookings_google_event ON bookings(google_event_id);
 
--- Cache control table (fallback when KV is unavailable)
+-- Email verification challenges table for OTP codes
+CREATE TABLE IF NOT EXISTS email_verifications (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    email TEXT NOT NULL,
+    otp_code TEXT NOT NULL,
+    token TEXT UNIQUE,
+    expires_at DATETIME NOT NULL,
+    verified_at DATETIME,
+    attempts INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verif_email ON email_verifications(email, otp_code);
+CREATE INDEX IF NOT EXISTS idx_email_verif_token ON email_verifications(token);
+
+-- Cache control table
 CREATE TABLE IF NOT EXISTS cache_control (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -198,7 +247,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
     url TEXT NOT NULL,
-    events TEXT NOT NULL, -- JSON array of event types
+    events TEXT NOT NULL,
     secret TEXT NOT NULL,
     is_active BOOLEAN DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -215,7 +264,7 @@ CREATE TABLE IF NOT EXISTS email_templates (
     template_type TEXT NOT NULL CHECK (template_type IN ('confirmation', 'cancellation', 'reschedule', 'reminder_24h', 'reminder_1h', 'reminder_30m')),
     is_enabled BOOLEAN DEFAULT 1,
     subject TEXT,
-    custom_message TEXT, -- Additional message to include in template
+    custom_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

@@ -15,43 +15,39 @@
 		{ id: 6, name: 'Saturday' }
 	];
 
-	// Initialize availability state from loaded data
+	// Initialize availability state
 	let availability = $state(
 		daysOfWeek.map((day) => {
 			const existingRules = data.rules?.filter((r) => r.day_of_week === day.id) || [];
 			return {
 				day: day.id,
 				name: day.name,
-				enabled: existingRules.length > 0,
-				startTime: existingRules[0]?.start_time || '09:00',
-				endTime: existingRules[0]?.end_time || '17:00'
+				enabled: existingRules.length > 0 || (day.id >= 1 && day.id <= 5), // default Mon-Fri
+				startTime: existingRules[0]?.start_time || '10:00',
+				endTime: existingRules[0]?.end_time || '18:00'
 			};
 		})
 	);
 
 	let saving = $state(false);
 	let showSuccess = $state(false);
-	let selectedTimezone = $state(data.timezone || 'UTC');
+	let selectedTimezone = $state(data.timezone || 'Asia/Kolkata');
 	let showTimezoneDropdown = $state(false);
 
-	// Timezone label helper
 	const timezoneLabels: Record<string, string> = {
-		'America/Los_Angeles': 'Pacific Time',
-		'America/Denver': 'Mountain Time',
-		'America/Chicago': 'Central Time',
-		'America/New_York': 'Eastern Time',
-		'Europe/London': 'UK, Ireland Time',
-		'Europe/Paris': 'Central European Time',
-		'Europe/Amsterdam': 'Amsterdam Time',
-		'Europe/Berlin': 'Berlin Time',
-		'Asia/Tokyo': 'Japan Time',
-		'Asia/Shanghai': 'China Time',
-		'Australia/Sydney': 'Sydney Time',
-		'UTC': 'UTC Time'
+		'Asia/Kolkata': 'India Standard Time (IST)',
+		'America/New_York': 'Eastern Time (ET)',
+		'America/Chicago': 'Central Time (CT)',
+		'America/Los_Angeles': 'Pacific Time (PT)',
+		'Europe/London': 'UK Time (GMT/BST)',
+		'Europe/Paris': 'Central European Time (CET)',
+		'Asia/Dubai': 'Gulf Standard Time (GST)',
+		'Asia/Singapore': 'Singapore Time (SGT)',
+		'UTC': 'Universal Coordinated Time (UTC)'
 	};
 
 	function getTimezoneLabel(tz: string): string {
-		return timezoneLabels[tz] || tz.replace(/_/g, ' ').split('/').pop() || tz;
+		return timezoneLabels[tz] || tz;
 	}
 
 	function getCurrentTime(tz: string): string {
@@ -71,161 +67,159 @@
 		saving = true;
 		showSuccess = false;
 		return async ({ update, result }: any) => {
-			// Update to get the form action result, but don't reload the page data
 			await update({ reset: false });
 			saving = false;
-
-			// Show success message if save was successful
 			if (result.type === 'success' && result.data?.success) {
 				showSuccess = true;
-				// Hide success message after 3 seconds
-				setTimeout(() => {
-					showSuccess = false;
-				}, 3000);
+				setTimeout(() => (showSuccess = false), 3500);
 			}
 		};
 	}
 </script>
 
-<div class="min-h-screen bg-gray-50">
-	<!-- Header -->
-	<header class="bg-white shadow-sm">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-			<div class="flex items-center gap-4">
-				<a href="/dashboard" class="text-gray-600 hover:text-gray-900">
-					← Back to Dashboard
-				</a>
-				<h1 class="text-2xl font-bold text-gray-900">Set Availability</h1>
-			</div>
+<svelte:head>
+	<title>Working Hours & Schedule | Neubofy™</title>
+</svelte:head>
+
+<div class="p-6 sm:p-10 max-w-4xl mx-auto space-y-8 animate-fade-in">
+	<div>
+		<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Working Hours & Schedule</h1>
+		<p class="text-sm text-zinc-400 mt-1">
+			Define recurring days and hours when you are available for client consultations.
+		</p>
+	</div>
+
+	{#if showSuccess}
+		<div class="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+			✓ Availability schedule saved successfully!
 		</div>
-	</header>
+	{/if}
 
-	<main class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-		{#if showSuccess}
-			<div class="bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 mb-6">
-				✓ Availability saved successfully!
-			</div>
-		{/if}
+	{#if form?.error}
+		<div class="p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold">
+			✕ Error: {form.error}
+		</div>
+	{/if}
 
-		{#if form?.error}
-			<div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-6">
-				Error: {form.error}
-			</div>
-		{/if}
+	<!-- Timezone Selection -->
+	<div class="glass-card rounded-2xl p-6 border border-white/10 space-y-3">
+		<h2 class="text-base font-bold text-white">Your Timezone</h2>
+		<p class="text-xs text-zinc-400">
+			Consultation slots are computed based on this timezone and automatically converted for clients worldwide.
+		</p>
 
-		<!-- Timezone Selection -->
-		<div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-			<h2 class="text-lg font-semibold text-gray-900 mb-4">Your Timezone</h2>
-			<p class="text-sm text-gray-600 mb-4">
-				Set your timezone so that your availability is shown correctly to people booking meetings.
-			</p>
-			<div class="relative">
-				<button
-					type="button"
-					onclick={() => showTimezoneDropdown = !showTimezoneDropdown}
-					class="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg hover:border-gray-400 transition w-full sm:w-auto"
-				>
-					<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-					</svg>
-					<div class="text-left">
-						<div class="font-medium text-gray-900">{getTimezoneLabel(selectedTimezone)}</div>
-						<div class="text-sm text-gray-500">{selectedTimezone} ({getCurrentTime(selectedTimezone)})</div>
-					</div>
-					<svg class="w-5 h-5 text-gray-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-					</svg>
-				</button>
-				{#if showTimezoneDropdown}
+		<div class="relative">
+			<button
+				type="button"
+				onclick={() => (showTimezoneDropdown = !showTimezoneDropdown)}
+				class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-white hover:border-blue-500 transition w-full sm:w-auto text-left"
+			>
+				<span>🌐</span>
+				<div>
+					<div class="text-xs font-bold text-white">{getTimezoneLabel(selectedTimezone)}</div>
+					<div class="text-[11px] text-zinc-400">{selectedTimezone} &bull; Current Time: {getCurrentTime(selectedTimezone)}</div>
+				</div>
+				<span class="ml-auto text-xs text-zinc-500">▼</span>
+			</button>
+
+			{#if showTimezoneDropdown}
+				<div class="absolute top-full left-0 mt-2 z-50">
 					<TimezoneSelector
 						{selectedTimezone}
-						onSelect={(tz) => selectedTimezone = tz}
-						onClose={() => showTimezoneDropdown = false}
+						onSelect={(tz) => (selectedTimezone = tz)}
+						onClose={() => (showTimezoneDropdown = false)}
 					/>
-				{/if}
-			</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Weekly Schedule Card -->
+	<div class="glass-card rounded-2xl p-6 sm:p-8 border border-white/10 space-y-6">
+		<div>
+			<h2 class="text-base font-bold text-white">Weekly Working Hours</h2>
+			<p class="text-xs text-zinc-400 mt-0.5">
+				Enable the days of the week you accept consultations and set start & end times.
+			</p>
 		</div>
 
-		<div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-			<h2 class="text-lg font-semibold text-gray-900 mb-4">Weekly Schedule</h2>
-			<p class="text-sm text-gray-600 mb-6">
-				Set your available hours for each day of the week. People can only book meetings during these times.
-			</p>
+		<form method="POST" action="?/save" use:enhance={handleSubmit} class="space-y-6">
+			<input type="hidden" name="rules" value={JSON.stringify(availability)} />
+			<input type="hidden" name="timezone" value={selectedTimezone} />
 
-			<form method="POST" action="?/save" use:enhance={handleSubmit}>
-				<input type="hidden" name="rules" value={JSON.stringify(availability)} />
-				<input type="hidden" name="timezone" value={selectedTimezone} />
-
-				<div class="space-y-4">
-					{#each availability as day}
-						<div class="flex items-center gap-4 p-4 border border-gray-200 rounded-lg">
-							<div class="flex items-center min-w-[120px]">
-								<input
-									type="checkbox"
-									bind:checked={day.enabled}
-									class="h-4 w-4 text-blue-600 rounded border-gray-300"
-									id="day-{day.day}"
-								/>
-								<label for="day-{day.day}" class="ml-2 font-medium text-gray-900">
-									{day.name}
-								</label>
-							</div>
-
-							{#if day.enabled}
-								<div class="flex items-center gap-2 flex-1">
-									<input
-										type="time"
-										bind:value={day.startTime}
-										class="px-3 py-2 border border-gray-300 rounded-md text-sm"
-									/>
-									<span class="text-gray-600">to</span>
-									<input
-										type="time"
-										bind:value={day.endTime}
-										class="px-3 py-2 border border-gray-300 rounded-md text-sm"
-									/>
-								</div>
-							{:else}
-								<span class="text-gray-400 text-sm">Unavailable</span>
-							{/if}
+			<div class="space-y-3">
+				{#each availability as day}
+					<div class="p-3.5 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+						<div class="flex items-center gap-3 min-w-[140px]">
+							<input
+								type="checkbox"
+								bind:checked={day.enabled}
+								id="day-{day.day}"
+								class="w-4 h-4 rounded text-blue-600 bg-white/5 border-white/20 focus:ring-blue-500"
+							/>
+							<label for="day-{day.day}" class="text-xs font-bold text-white cursor-pointer select-none">
+								{day.name}
+							</label>
 						</div>
-					{/each}
-				</div>
 
-				<div class="mt-6 flex gap-4">
-					<button
-						type="submit"
-						disabled={saving}
-						class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-					>
-						{saving ? 'Saving...' : 'Save Availability'}
-					</button>
+						{#if day.enabled}
+							<div class="flex items-center gap-2 text-xs">
+								<input
+									type="time"
+									bind:value={day.startTime}
+									class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500 font-mono"
+								/>
+								<span class="text-zinc-500">to</span>
+								<input
+									type="time"
+									bind:value={day.endTime}
+									class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500 font-mono"
+								/>
+							</div>
+						{:else}
+							<span class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+								Unavailable
+							</span>
+						{/if}
+					</div>
+				{/each}
+			</div>
 
-					<button
-						type="button"
-						onclick={() => {
-							// Set typical work hours (Mon-Fri 9-5)
-							availability = availability.map((day) => ({
-								...day,
-								enabled: day.day >= 1 && day.day <= 5,
-								startTime: '09:00',
-								endTime: '17:00'
-							}));
-						}}
-						class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-					>
-						Set Default Hours (Mon-Fri, 9-5)
-					</button>
-				</div>
-			</form>
-		</div>
+			<div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-white/10">
+				<button
+					type="button"
+					onclick={() => {
+						availability = availability.map((d) => ({
+							...d,
+							enabled: d.day >= 1 && d.day <= 5,
+							startTime: '10:00',
+							endTime: '18:00'
+						}));
+					}}
+					class="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10 transition-all"
+				>
+					Set Standard Business Hours (Mon-Fri, 10am - 6pm)
+				</button>
 
-		<div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-			<h3 class="font-semibold text-blue-900 mb-2">Note</h3>
-			<p class="text-sm text-blue-800">
-				Your connected calendars will also be checked for conflicts. Even if you're available according to these hours,
-				if you have an event on your calendar during a time slot, it won't be shown as available to book.
+				<button
+					type="submit"
+					disabled={saving}
+					class="btn-electric px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-50"
+				>
+					{saving ? 'Saving...' : 'Save Availability Schedule'}
+				</button>
+			</div>
+		</form>
+	</div>
+
+	<!-- Calendar Conflict Notice -->
+	<div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-start gap-3">
+		<span class="text-base">📅</span>
+		<div>
+			<strong class="font-bold">Real-Time Calendar Conflict Protection</strong>
+			<p class="text-zinc-400 mt-0.5 leading-relaxed">
+				When clients book with you, Neubofy cross-references these working hours with your connected Google Calendar. Any busy personal appointments or conflicts are automatically blocked out in real-time.
 			</p>
 		</div>
-	</main>
+	</div>
 </div>
