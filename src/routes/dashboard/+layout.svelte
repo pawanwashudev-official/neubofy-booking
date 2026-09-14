@@ -33,14 +33,24 @@
 				{roleBadgeLabel}
 			</span>
 		</div>
-		<button
-			type="button"
-			onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-			class="p-2 rounded-lg bg-white/5 border border-white/10 text-zinc-300 hover:text-white text-sm"
-			aria-label="Toggle menu"
-		>
-			{#if mobileMenuOpen}✕{:else}☰{/if}
-		</button>
+		<div class="flex items-center space-x-2">
+			<a
+				href="/auth/logout"
+				title="Sign Out"
+				class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1 transition-all"
+			>
+				<span>🚪</span>
+				<span>Sign Out</span>
+			</a>
+			<button
+				type="button"
+				onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
+				class="p-2 rounded-lg bg-white/5 border border-white/10 text-zinc-300 hover:text-white text-sm"
+				aria-label="Toggle menu"
+			>
+				{#if mobileMenuOpen}✕{:else}☰{/if}
+			</button>
+		</div>
 	</div>
 
 	<!-- Sidebar (Zoho Bookings Role-Aware Navigation) -->
@@ -234,36 +244,36 @@
 		</div>
 
 		<!-- User Footer in Sidebar -->
-		<div class="p-4 border-t border-white/10 bg-black/30">
-			<div class="flex items-center justify-between">
-				<div class="flex items-center space-x-3 min-w-0">
-					{#if data.user?.profile_image}
-						<img
-							src={data.user.profile_image}
-							alt={data.user?.name}
-							class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0"
-						/>
-					{:else}
-						<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white text-xs shrink-0">
-							{data.user?.name?.charAt(0) || 'U'}
-						</div>
-					{/if}
-					<div class="min-w-0 flex-1">
-						<p class="text-xs font-bold text-white truncate">{data.user?.name}</p>
-						<p class="text-[10px] text-zinc-400 truncate">{data.user?.email}</p>
+		<div class="p-4 border-t border-white/10 bg-black/40 space-y-3">
+			<div class="flex items-center space-x-3 min-w-0">
+				{#if data.user?.profile_image}
+					<img
+						src={data.user.profile_image}
+						alt={data.user?.name}
+						class="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0 shadow-md"
+					/>
+				{:else}
+					<div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-sm shrink-0 border border-white/20 shadow-md">
+						{data.user?.name?.charAt(0) || 'U'}
 					</div>
+				{/if}
+				<div class="min-w-0 flex-1">
+					<p class="text-xs font-bold text-white truncate">{data.user?.name}</p>
+					<p class="text-[10px] text-zinc-400 truncate">{data.user?.email}</p>
+					<span class="inline-block text-[9px] font-bold uppercase tracking-wider text-blue-400 mt-0.5">
+						{roleBadgeLabel}
+					</span>
 				</div>
-
-				<form method="POST" action="/auth/logout">
-					<button
-						type="submit"
-						title="Sign Out"
-						class="p-2 text-zinc-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors text-xs"
-					>
-						🚪
-					</button>
-				</form>
 			</div>
+
+			<!-- Prominent Sign Out Button -->
+			<a
+				href="/auth/logout"
+				class="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/25 hover:border-red-500/40 transition-all flex items-center justify-center gap-2 group shadow-sm"
+			>
+				<span class="text-sm group-hover:scale-110 transition-transform">🚪</span>
+				<span>Sign Out of Portal</span>
+			</a>
 		</div>
 	</aside>
 

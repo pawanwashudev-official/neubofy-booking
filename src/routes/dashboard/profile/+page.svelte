@@ -324,4 +324,27 @@
 			</button>
 		</div>
 	</div>
+
+	<!-- Session Security & Sign Out Section -->
+	<div class="glass-card rounded-2xl p-6 sm:p-8 border border-white/10 space-y-4">
+		<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+			<div>
+				<h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+					<span>🔒</span>
+					<span>Active Session & Security</span>
+				</h2>
+				<p class="text-xs text-zinc-400 mt-1">
+					Signed in as <strong class="text-zinc-200">{data.profile?.email || 'authenticated user'}</strong>. Sign out if using a shared workstation.
+				</p>
+			</div>
+
+			<a
+				href="/auth/logout"
+				class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition-all flex items-center justify-center gap-2 shadow-sm shrink-0"
+			>
+				<span>🚪</span>
+				<span>Sign Out of Portal</span>
+			</a>
+		</div>
+	</div>
 </div>

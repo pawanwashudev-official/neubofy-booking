@@ -36,69 +36,66 @@
 	<title>Cancel Booking</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50 py-12">
-	<div class="max-w-2xl mx-auto px-4">
+<div class="min-h-screen bg-[#09090b] text-zinc-100 py-12 px-4 flex items-center justify-center">
+	<div class="max-w-xl w-full mx-auto space-y-6 animate-fade-in">
 		{#if success || data.alreadyCanceled}
 			<!-- Success Message -->
-			<div class="bg-white rounded-lg shadow-lg p-8 text-center">
-				<div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-					<svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M5 13l4 4L19 7"
-						></path>
-					</svg>
+			<div class="glass-card rounded-3xl border border-white/10 p-8 sm:p-10 text-center shadow-2xl space-y-4">
+				<div class="w-16 h-16 bg-red-500/15 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto text-2xl">
+					✕
 				</div>
-				<h1 class="text-2xl font-bold text-gray-900 mb-2">Booking Cancelled</h1>
-				<p class="text-gray-600 mb-6">
-					Your meeting has been cancelled successfully. The host has been notified.
+				<h1 class="text-2xl font-bold text-white tracking-tight">Booking Cancelled</h1>
+				<p class="text-xs sm:text-sm text-zinc-400 leading-relaxed max-w-md mx-auto">
+					Your consultation has been successfully cancelled and the specialist has been notified.
 				</p>
-				<a
-					href="/{data.booking.event_slug}"
-					class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-				>
-					Book Another Meeting
-				</a>
+				<div class="pt-4">
+					<a
+						href="/"
+						class="btn-electric px-6 py-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-[0_0_20px_rgba(59,130,246,0.4)]"
+					>
+						<span>← Return to Consultation Portal</span>
+					</a>
+				</div>
 			</div>
 		{:else}
 			<!-- Cancellation Form -->
-			<div class="bg-white rounded-lg shadow-lg p-8">
-				<h1 class="text-2xl font-bold text-gray-900 mb-6">Cancel Booking</h1>
+			<div class="glass-card rounded-3xl border border-white/10 p-8 sm:p-10 shadow-2xl space-y-6">
+				<div class="border-b border-white/10 pb-4">
+					<span class="text-[10px] font-bold uppercase tracking-wider text-red-400 px-2.5 py-0.5 rounded bg-red-500/15 border border-red-500/30">
+						Cancellation Request
+					</span>
+					<h1 class="text-2xl font-bold text-white tracking-tight mt-2">Cancel Consultation</h1>
+					<p class="text-xs text-zinc-400 mt-1">Please confirm if you would like to release your reserved time slot.</p>
+				</div>
 
 				{#if form?.error}
-					<div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-6">
-						Error: {form.error}
+					<div class="p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold">
+						✕ {form.error}
 					</div>
 				{/if}
 
-				<div class="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
-					<h2 class="font-semibold text-gray-900 mb-4">Booking Details</h2>
-					<div class="space-y-2 text-sm">
-						<div>
-							<span class="text-gray-600">Event:</span>
-							<span class="ml-2 text-gray-900 font-medium">{data.booking.event_name}</span>
-						</div>
-						<div>
-							<span class="text-gray-600">With:</span>
-							<span class="ml-2 text-gray-900 font-medium">{data.booking.host_name}</span>
-						</div>
-						<div>
-							<span class="text-gray-600">Time:</span>
-							<span class="ml-2 text-gray-900 font-medium"
-								>{formatDateTime(data.booking.start_time)}</span
-							>
-						</div>
-						<div>
-							<span class="text-gray-600">Attendee:</span>
-							<span class="ml-2 text-gray-900 font-medium">{data.booking.attendee_name}</span>
-						</div>
+				<div class="p-5 rounded-2xl bg-black/40 border border-white/10 space-y-2.5 text-xs">
+					<h2 class="font-bold text-white text-sm mb-3">Consultation Details</h2>
+					<div class="flex justify-between py-1 border-b border-white/5">
+						<span class="text-zinc-400">Service:</span>
+						<span class="text-white font-semibold">{data.booking.event_name}</span>
+					</div>
+					<div class="flex justify-between py-1 border-b border-white/5">
+						<span class="text-zinc-400">Specialist:</span>
+						<span class="text-white font-semibold">{data.booking.host_name}</span>
+					</div>
+					<div class="flex justify-between py-1 border-b border-white/5">
+						<span class="text-zinc-400">Scheduled Time:</span>
+						<span class="text-white font-semibold">{formatDateTime(data.booking.start_time)}</span>
+					</div>
+					<div class="flex justify-between py-1">
+						<span class="text-zinc-400">Client:</span>
+						<span class="text-white font-semibold">{data.booking.attendee_name}</span>
 					</div>
 				</div>
 
-				<div class="mb-6">
-					<label for="reason" class="block text-sm font-medium text-gray-700 mb-2">
+				<div>
+					<label for="reason" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
 						Reason for cancellation (optional)
 					</label>
 					<textarea
@@ -106,38 +103,35 @@
 						name="reason"
 						bind:value={reason}
 						rows="3"
-						class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-						placeholder="Let the host know why you're cancelling..."
+						class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all resize-none"
+						placeholder="Let the specialist know why you're cancelling..."
 					></textarea>
 				</div>
 
-				<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-					<p class="text-sm text-yellow-800">
-						<strong>Warning:</strong> This action cannot be undone. The host will be notified of the cancellation.
-					</p>
+				<div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2.5">
+					<span class="text-base">⚠️</span>
+					<span>This action will cancel the meeting calendar invite and notify the specialist.</span>
 				</div>
 
 				<form method="POST" use:enhance={handleSubmit}>
 					<input type="hidden" name="reason" value={reason} />
-					<div class="flex gap-4">
+					<div class="flex flex-col sm:flex-row gap-3 pt-2">
 						<button
 							type="submit"
 							disabled={cancelling}
-							class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 font-medium"
+							class="flex-1 px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_16px_rgba(239,68,68,0.4)] disabled:opacity-50"
 						>
-							{cancelling ? 'Cancelling...' : 'Yes, Cancel Booking'}
+							{cancelling ? 'Cancelling...' : 'Confirm Cancellation'}
 						</button>
 						<a
-							href="/{data.booking.event_slug}"
-							class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-center font-medium"
+							href="/"
+							class="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 text-xs font-semibold text-center transition-all"
 						>
-							Keep Booking
+							Keep Consultation
 						</a>
 					</div>
 				</form>
 			</div>
 		{/if}
-
-		<Footer class="mt-6" />
 	</div>
 </div>

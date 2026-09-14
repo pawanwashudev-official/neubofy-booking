@@ -57,13 +57,13 @@
 	// Step 1: Select Event
 	function handleSelectEvent(event: any) {
 		selectedEvent = event;
-		// If event has assigned experts, pick first or let user choose
+		// Pick first assigned expert if available, otherwise null
 		if (event.experts && event.experts.length > 0) {
 			selectedExpert = event.experts[0];
 			selectedDuration = event.durations?.[0] || 30;
-		} else if (data.allExperts && data.allExperts.length > 0) {
-			selectedExpert = data.allExperts[0];
-			selectedDuration = 30;
+		} else {
+			selectedExpert = null;
+			selectedDuration = event.durations?.[0] || 30;
 		}
 		step = 2;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -422,7 +422,7 @@
 										{eventType.durations ? eventType.durations.join(' / ') : 30} mins
 									</span>
 									<span class="text-zinc-500">
-										{eventType.experts?.length || data.allExperts?.length || 1} specialist(s)
+										{eventType.experts ? eventType.experts.length : 0} specialist(s)
 									</span>
 								</div>
 
@@ -502,67 +502,88 @@
 
 				<!-- Expert Cards List -->
 				<div class="space-y-4">
-					{#each selectedEvent.experts && selectedEvent.experts.length > 0 ? selectedEvent.experts : data.allExperts as expert}
-						<div class="glass-card rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all">
-							<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-								<div class="flex items-start gap-4">
-									{#if expert.profile_image}
-										<img
-											src={expert.profile_image}
-											alt={expert.name}
-											class="w-16 h-16 rounded-2xl object-cover border border-white/10 shrink-0"
-										/>
-									{:else}
-										<div
-											class="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-xl text-white border border-white/10 shrink-0"
-											style="background: {expert.brand_color || '#2563eb'}"
-										>
-											{expert.name?.charAt(0) || 'E'}
-										</div>
-									{/if}
-
-									<div>
-										<h4 class="text-lg font-bold text-white mb-0.5">{expert.name}</h4>
-										<p class="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2">
-											{expert.role_title || 'Technology Consultant'}
-										</p>
-										<p class="text-xs text-zinc-400 max-w-xl line-clamp-2">
-											{expert.bio || 'Specialist at Neubofy translating business requirements into technical reality.'}
-										</p>
-									</div>
-								</div>
-
-								<!-- Session Durations & Free Badge -->
-								<div class="w-full sm:w-auto flex flex-col items-end gap-3 shrink-0">
-									<div class="flex flex-wrap gap-2">
-										{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d) => ({ duration: d, price: 0 })) as tier}
-											<button
-												type="button"
-												onclick={() => handleSelectExpert(expert, tier.duration)}
-												class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col {selectedExpert?.id === expert.id && selectedDuration === tier.duration
-													? 'bg-blue-600/30 border-blue-500 text-white shadow-[0_0_16px_rgba(59,130,246,0.3)]'
-													: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
+					{#if selectedEvent.experts && selectedEvent.experts.length > 0}
+						{#each selectedEvent.experts as expert}
+							<div class="glass-card rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all">
+								<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+									<div class="flex items-start gap-4">
+										{#if expert.profile_image}
+											<img
+												src={expert.profile_image}
+												alt={expert.name}
+												class="w-16 h-16 rounded-2xl object-cover border border-white/10 shrink-0"
+											/>
+										{:else}
+											<div
+												class="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-xl text-white border border-white/10 shrink-0"
+												style="background: {expert.brand_color || '#2563eb'}"
 											>
-												<span class="font-bold">{tier.duration} Mins</span>
-												{#if tier.price > 0}
-													<span class="text-[11px] text-zinc-400 line-through">₹{tier.price}</span>
-												{/if}
-												<span class="text-[11px] text-emerald-400 font-bold">Complimentary</span>
-											</button>
-										{/each}
+												{expert.name?.charAt(0) || 'E'}
+											</div>
+										{/if}
+
+										<div>
+											<h4 class="text-lg font-bold text-white mb-0.5">{expert.name}</h4>
+											<p class="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-2">
+												{expert.role_title || 'Technology Consultant'}
+											</p>
+											<p class="text-xs text-zinc-400 max-w-xl line-clamp-2">
+												{expert.bio || 'Specialist at Neubofy translating business requirements into technical reality.'}
+											</p>
+										</div>
 									</div>
 
-									<button
-										type="button"
-										onclick={() => handleSelectExpert(expert, selectedDuration)}
-										class="w-full sm:w-auto btn-electric px-5 py-2.5 rounded-xl text-xs font-bold"
-									>
-										Check Schedule & Book →
-									</button>
+									<!-- Session Durations & Free Badge -->
+									<div class="w-full sm:w-auto flex flex-col items-end gap-3 shrink-0">
+										<div class="flex flex-wrap gap-2">
+											{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d) => ({ duration: d, price: 0 })) as tier}
+												<button
+													type="button"
+													onclick={() => handleSelectExpert(expert, tier.duration)}
+													class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col {selectedExpert?.id === expert.id && selectedDuration === tier.duration
+														? 'bg-blue-600/30 border-blue-500 text-white shadow-[0_0_16px_rgba(59,130,246,0.3)]'
+														: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
+												>
+													<span class="font-bold">{tier.duration} Mins</span>
+													{#if tier.price > 0}
+														<span class="text-[11px] text-zinc-400 line-through">₹{tier.price}</span>
+													{/if}
+													<span class="text-[11px] text-emerald-400 font-bold">Complimentary</span>
+												</button>
+											{/each}
+										</div>
+
+										<button
+											type="button"
+											onclick={() => handleSelectExpert(expert, selectedDuration)}
+											class="w-full sm:w-auto btn-electric px-5 py-2.5 rounded-xl text-xs font-bold"
+										>
+											Check Schedule & Book →
+										</button>
+									</div>
 								</div>
 							</div>
+						{/each}
+					{:else}
+						<div class="glass-card rounded-2xl p-10 text-center border border-white/10 max-w-lg mx-auto space-y-4 animate-fade-in">
+							<div class="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-2xl">
+								👥
+							</div>
+							<h4 class="text-lg font-bold text-white">No Specialists Assigned Yet</h4>
+							<p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
+								There are currently no specialists assigned to <strong>{selectedEvent.name}</strong>. Please choose another consultation service or contact our team.
+							</p>
+							<div class="pt-2">
+								<button
+									type="button"
+									onclick={() => (step = 1)}
+									class="btn-electric px-6 py-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-2"
+								>
+									← Browse Other Services
+								</button>
+							</div>
 						</div>
-					{/each}
+					{/if}
 				</div>
 			</div>
 		{/if}

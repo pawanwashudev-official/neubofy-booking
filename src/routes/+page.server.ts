@@ -48,10 +48,10 @@ export const load: PageServerLoad = async ({ platform }) => {
 		// 2. Fetch only real active consultation events from DB (no fake data)
 		const eventTypesResult = await db
 			.prepare(
-				`SELECT id, organization_id, name, slug, description, category, durations_json,
+				`SELECT id, user_id, organization_id, name, slug, description, category, durations_json,
 				        duration_minutes, icon_name, color, cover_image, is_free_only, is_active
 				 FROM event_types
-				 WHERE is_active = 1
+				 WHERE COALESCE(is_active, 1) = 1
 				 ORDER BY created_at ASC`
 			)
 			.all();
@@ -87,7 +87,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 
 		const assignments = (assignmentsResult.results as any[]) || [];
 
-		// Group experts per event
+		// Strictly group experts per service - ONLY assigned experts are listed
 		const eventTypesWithExperts = eventTypes.map((et) => {
 			const assignedUserIds = assignments
 				.filter((a) => a.event_type_id === et.id)
@@ -95,9 +95,12 @@ export const load: PageServerLoad = async ({ platform }) => {
 
 			let assignedExperts = allExperts.filter((exp) => assignedUserIds.includes(exp.id));
 
-			// If no explicit assignment yet, all active experts are available
-			if (assignedExperts.length === 0) {
-				assignedExperts = allExperts;
+			// If no junction records exist yet, support legacy creator if active
+			if (assignedExperts.length === 0 && et.user_id) {
+				const creatorExpert = allExperts.find((exp) => exp.id === et.user_id);
+				if (creatorExpert) {
+					assignedExperts = [creatorExpert];
+				}
 			}
 
 			let parsedDurations: number[] = [30, 60];

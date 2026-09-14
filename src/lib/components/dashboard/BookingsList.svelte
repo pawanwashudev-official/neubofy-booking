@@ -44,53 +44,53 @@
 	function getStatusColor(status: string) {
 		switch (status) {
 			case 'confirmed':
-				return 'bg-green-100 text-green-800';
+				return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
 			case 'canceled':
-				return 'bg-red-100 text-red-800';
+				return 'bg-red-500/10 text-red-400 border border-red-500/20';
 			case 'pending':
-				return 'bg-yellow-100 text-yellow-800';
+				return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
 			default:
-				return 'bg-gray-100 text-gray-800';
+				return 'bg-white/5 text-zinc-400 border border-white/10';
 		}
 	}
 </script>
 
 <div>
 	<div class="flex justify-between items-center mb-4">
-		<h2 class="text-xl font-bold text-gray-900">Upcoming Bookings</h2>
+		<h2 class="text-lg font-bold text-white tracking-tight">Upcoming Bookings</h2>
 		<select
 			bind:value={sortOrder}
-			class="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+			class="text-xs border border-white/10 rounded-xl px-3 py-1.5 bg-white/5 text-zinc-300 focus:outline-none focus:border-blue-500"
 		>
-			<option value="last_booked">Last booked</option>
-			<option value="upcoming">Upcoming first</option>
+			<option value="last_booked" class="bg-[#121216] text-white">Last booked</option>
+			<option value="upcoming" class="bg-[#121216] text-white">Upcoming first</option>
 		</select>
 	</div>
 
-	<div class="space-y-4">
+	<div class="space-y-3">
 		{#if sortedBookings().length > 0}
 			{#each sortedBookings() as booking}
-				<div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+				<div class="glass-card rounded-2xl p-4 border border-white/10 shadow-lg">
 					<div class="flex justify-between items-start mb-2">
 						<div>
-							<h3 class="font-semibold text-gray-900">{booking.event_type_name}</h3>
-							<p class="text-sm text-gray-600">{booking.attendee_name}</p>
-							<p class="text-xs text-gray-500">{booking.attendee_email}</p>
+							<h3 class="font-semibold text-white text-sm">{booking.event_type_name}</h3>
+							<p class="text-xs text-zinc-300 mt-0.5">{booking.attendee_name}</p>
+							<p class="text-xs text-zinc-500">{booking.attendee_email}</p>
 						</div>
 						<div class="flex items-center gap-2">
-							<span class="px-2 py-1 text-xs rounded-full {getStatusColor(booking.status)}">
+							<span class="px-2 py-0.5 text-xs rounded-full font-medium {getStatusColor(booking.status)}">
 								{booking.status}
 							</span>
 							{#if booking.status === 'confirmed'}
 								<button
 									onclick={() => onRescheduleClick(booking.id)}
-									class="text-xs text-blue-600 hover:text-blue-700 font-medium"
+									class="text-xs text-blue-400 hover:text-blue-300 font-medium px-2 py-1 rounded-lg hover:bg-white/5 transition"
 								>
 									Reschedule
 								</button>
 								<button
 									onclick={() => onCancelClick(booking.id)}
-									class="text-xs text-red-600 hover:text-red-700 font-medium"
+									class="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1 rounded-lg hover:bg-white/5 transition"
 								>
 									Cancel
 								</button>
@@ -98,34 +98,34 @@
 							{#if booking.status === 'canceled' || new Date(booking.end_time).getTime() <= Date.now()}
 								<button
 									onclick={() => onDeleteClick(booking)}
-									class="text-xs font-medium text-red-700 hover:text-red-900"
+									class="text-xs font-medium text-red-400/80 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-white/5 transition"
 								>
 									Delete
 								</button>
 							{/if}
 						</div>
 					</div>
-					<div class="text-sm text-gray-700 mt-2">
+					<div class="text-xs text-zinc-300 mt-2 font-mono">
 						<p>{formatCompactDateTime(new Date(booking.start_time))}</p>
 					</div>
 					{#if booking.attendee_notes}
-						<div class="mt-2 text-sm text-gray-600 bg-gray-50 rounded p-2">
-							<span class="font-medium">Message:</span> {booking.attendee_notes}
+						<div class="mt-3 text-xs text-zinc-300 bg-white/5 border border-white/10 rounded-xl p-3">
+							<span class="font-medium text-zinc-400">Message:</span> {booking.attendee_notes}
 						</div>
 					{/if}
 					{#if booking.status === 'canceled'}
-						<div class="mt-2 text-sm text-red-600 bg-red-50 rounded p-2">
+						<div class="mt-3 text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
 							<span class="font-medium">Cancelled by {booking.canceled_by === 'host' ? 'you' : 'attendee'}</span>
 							{#if booking.cancellation_reason}
-								<span class="text-red-500">: {booking.cancellation_reason}</span>
+								<span class="text-red-400/80">: {booking.cancellation_reason}</span>
 							{/if}
 						</div>
 					{/if}
 				</div>
 			{/each}
 		{:else}
-			<div class="bg-white rounded-lg shadow-sm p-8 text-center border border-gray-200">
-				<p class="text-gray-600">No bookings yet</p>
+			<div class="glass-card rounded-2xl p-8 text-center border border-white/10">
+				<p class="text-sm text-zinc-400">No bookings yet</p>
 			</div>
 		{/if}
 	</div>

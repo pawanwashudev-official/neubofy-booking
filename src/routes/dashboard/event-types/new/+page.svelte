@@ -1,155 +1,132 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { PageData, ActionData } from './$types';
-	import SimpleWysiwyg from '$lib/components/SimpleWysiwyg.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let name = $state('');
 	let slug = $state('');
-	let duration = $state(30);
+	let category = $state('Consultation');
 	let description = $state('');
-	let isActive = $state(true);
-	let coverImage = $state('');
-	let saving = $state(false);
-	let uploadingCover = $state(false);
+	let status = $state<'live' | 'paused'>('live');
+	let selectedDurations = $state<number[]>([30, 60]);
+	let selectedExpertIds = $state<string[]>(
+		(data.teamMembers || []).map((m: any) => m.id)
+	);
+	let isSaving = $state(false);
 
-	// Check which calendars are available
-	const hasGoogle = data.googleConnected;
-	const hasOutlook = data.outlookConnected && data.outlookConfigured;
+	const durationOptions = [15, 30, 45, 60, 90];
 
-	// Override checkbox state - defaults to false (use global settings)
-	let overrideCalendarSettings = $state(false);
-
-	// Smart defaults based on global settings or connected calendars
-	function getDefaultAvailability() {
-		if (data.defaultAvailabilityCalendars) return data.defaultAvailabilityCalendars;
-		if (hasGoogle && hasOutlook) return 'both';
-		if (hasOutlook) return 'outlook';
-		return 'google';
-	}
-
-	function getDefaultInviteCalendar() {
-		if (data.defaultInviteCalendar) return data.defaultInviteCalendar;
-		if (hasGoogle) return 'google';
-		if (hasOutlook) return 'outlook';
-		return 'google';
-	}
-
-	let availabilityCalendars = $state(getDefaultAvailability());
-	let inviteCalendar = $state(getDefaultInviteCalendar());
-
-	// Labels for displaying current global settings
-	function getAvailabilityLabel(val: string) {
-		if (val === 'both') return 'Both calendars';
-		if (val === 'outlook') return 'Outlook Calendar';
-		return 'Google Calendar';
-	}
-
-	function getInviteLabel(val: string) {
-		if (val === 'outlook') return 'Outlook (Microsoft Teams)';
-		return 'Google Calendar (Google Meet)';
-	}
-
-	async function handleCoverUpload(e: Event) {
-		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-
-		// Check file size (max 2MB)
-		if (file.size > 2 * 1024 * 1024) {
-			alert('Image must be less than 2MB');
-			return;
-		}
-
-		uploadingCover = true;
-		try {
-			// Convert to base64
-			const reader = new FileReader();
-			reader.onload = () => {
-				coverImage = reader.result as string;
-				uploadingCover = false;
-			};
-			reader.onerror = () => {
-				alert('Failed to read image');
-				uploadingCover = false;
-			};
-			reader.readAsDataURL(file);
-		} catch (err) {
-			alert('Failed to upload image');
-			uploadingCover = false;
+	function toggleDuration(d: number) {
+		if (selectedDurations.includes(d)) {
+			if (selectedDurations.length > 1) {
+				selectedDurations = selectedDurations.filter((val) => val !== d);
+			}
+		} else {
+			selectedDurations = [...selectedDurations, d].sort((a, b) => a - b);
 		}
 	}
 
-	function removeCoverImage() {
-		coverImage = '';
+	function handleNameChange(e: Event) {
+		const val = (e.target as HTMLInputElement).value;
+		name = val;
+		if (!slug || slug === autoSlug(val.slice(0, -1))) {
+			slug = autoSlug(val);
+		}
 	}
 
-	// Auto-generate slug from name
-	$effect(() => {
-		if (name) {
-			slug = name
-				.toLowerCase()
-				.replace(/[^a-z0-9\s-]/g, '')
-				.replace(/\s+/g, '-')
-				.replace(/-+/g, '-')
-				.trim();
-		}
-	});
+	function autoSlug(text: string) {
+		return text
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
 
-	function handleSubmit() {
-		saving = true;
-		return async ({ update }: any) => {
-			await update();
-			saving = false;
-		};
+	function toggleExpert(expertId: string) {
+		if (selectedExpertIds.includes(expertId)) {
+			selectedExpertIds = selectedExpertIds.filter((id) => id !== expertId);
+		} else {
+			selectedExpertIds = [...selectedExpertIds, expertId];
+		}
+	}
+
+	function selectAllExperts() {
+		selectedExpertIds = (data.teamMembers || []).map((m: any) => m.id);
+	}
+
+	function clearAllExperts() {
+		selectedExpertIds = [];
 	}
 </script>
 
-<div class="min-h-screen bg-gray-50">
+<svelte:head>
+	<title>Create Consultation Service | Neubofy™</title>
+</svelte:head>
+
+<div class="p-6 sm:p-10 max-w-4xl mx-auto space-y-8 animate-fade-in">
+	<!-- Top Navigation Breadcrumb -->
+	<div class="flex items-center justify-between">
+		<a
+			href="/dashboard/event-types"
+			class="inline-flex items-center text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+		>
+			← Back to Consultation Services
+		</a>
+		<span class="text-xs text-zinc-500 font-mono">Service Builder</span>
+	</div>
+
 	<!-- Header -->
-	<header class="bg-white shadow-sm">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-			<div class="flex items-center gap-4">
-				<a href="/dashboard" class="text-gray-600 hover:text-gray-900">
-					← Back to Dashboard
-				</a>
-				<h1 class="text-2xl font-bold text-gray-900">Create Event Type</h1>
-			</div>
+	<div>
+		<h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Create Consultation Service</h1>
+		<p class="text-xs sm:text-sm text-zinc-400 mt-1">
+			Define the service, configure allowable session durations, set live/paused status, and assign specialists.
+		</p>
+	</div>
+
+	<!-- Error Banner -->
+	{#if form?.error}
+		<div class="p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center justify-between">
+			<span>✕ {form.error}</span>
 		</div>
-	</header>
+	{/if}
 
-	<main class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-		{#if form?.error}
-			<div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-6">
-				Error: {form.error}
-			</div>
-		{/if}
+	<!-- Form Card -->
+	<div class="glass-card rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl">
+		<form
+			method="POST"
+			use:enhance={() => {
+				isSaving = true;
+				return async ({ update }) => {
+					isSaving = false;
+					await update();
+				};
+			}}
+			class="space-y-8"
+		>
+			<!-- Service Name & URL Slug -->
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+				<div>
+					<label for="name" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
+						Service Name *
+					</label>
+					<input
+						type="text"
+						id="name"
+						name="name"
+						bind:value={name}
+						oninput={handleNameChange}
+						required
+						placeholder="e.g. Technology Strategy & Advisory"
+						class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all"
+					/>
+				</div>
 
-		<div class="bg-white rounded-lg shadow-sm p-6">
-			<form method="POST" use:enhance={handleSubmit}>
-				<div class="space-y-6">
-					<!-- Event Name -->
-					<div>
-						<label for="name" class="block text-sm font-medium text-gray-700 mb-2">
-							Event Name *
-						</label>
-						<input
-							type="text"
-							id="name"
-							name="name"
-							bind:value={name}
-							required
-							placeholder="e.g., 30 Minute Meeting"
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-						/>
-					</div>
-
-					<!-- Slug -->
-					<div>
-						<label for="slug" class="block text-sm font-medium text-gray-700 mb-2">
-							URL Slug *
-						</label>
+				<div>
+					<label for="slug" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
+						URL Slug *
+					</label>
+					<div class="flex items-center rounded-xl bg-white/5 border border-white/15 overflow-hidden focus-within:border-blue-500 transition-all">
+						<span class="px-3 text-xs text-zinc-500 font-mono">/</span>
 						<input
 							type="text"
 							id="slug"
@@ -157,224 +134,210 @@
 							bind:value={slug}
 							required
 							pattern="[a-z0-9\-]+"
-							placeholder="e.g., 30min"
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+							placeholder="tech-strategy"
+							class="w-full py-2.5 pr-4 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
 						/>
-						<p class="text-xs text-gray-500 mt-1">
-							Only lowercase letters, numbers, and hyphens. This will be part of your booking URL.
-						</p>
 					</div>
+					<p class="text-[11px] text-zinc-500 mt-1">Lowercase alphanumeric and hyphens only.</p>
+				</div>
+			</div>
 
-					<!-- Duration -->
-					<div>
-						<label for="duration" class="block text-sm font-medium text-gray-700 mb-2">
-							Duration (minutes) *
-						</label>
-						<select
-							id="duration"
-							name="duration"
-							bind:value={duration}
-							required
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+			<!-- Category & Status -->
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+				<div>
+					<label for="category" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
+						Consultation Category
+					</label>
+					<input
+						type="text"
+						id="category"
+						name="category"
+						bind:value={category}
+						placeholder="e.g. Advisory, Architecture, Audit"
+						class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all"
+					/>
+				</div>
+
+				<!-- Live vs Paused Status Selector -->
+				<div>
+					<span class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
+						Initial Status *
+					</span>
+					<div class="grid grid-cols-2 gap-3">
+						<label
+							class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all {status === 'live'
+								? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+								: 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10'}"
 						>
-							<option value={15}>15 minutes</option>
-							<option value={30}>30 minutes</option>
-							<option value={45}>45 minutes</option>
-							<option value={60}>60 minutes</option>
-							<option value={90}>90 minutes</option>
-							<option value={120}>2 hours</option>
-						</select>
-					</div>
-
-					<!-- Description -->
-					<div>
-						<label for="description" class="block text-sm font-medium text-gray-700 mb-2">
-							Description
-						</label>
-						<SimpleWysiwyg
-							bind:value={description}
-							placeholder="Describe what this meeting is for..."
-						/>
-						<input type="hidden" name="description" value={description} />
-					</div>
-
-					<!-- Cover Image -->
-					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-2">
-							Cover Image
-						</label>
-						<p class="text-xs text-gray-500 mb-3">
-							This image will be displayed at the top of your booking page
-						</p>
-
-						{#if coverImage}
-							<div class="relative mb-3 p-4 bg-gray-100 rounded-lg">
-								<img
-									src={coverImage}
-									alt="Cover preview"
-									class="max-h-20 w-auto object-contain mx-auto"
-								/>
-								<button
-									type="button"
-									onclick={removeCoverImage}
-									class="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full hover:bg-red-700 transition"
-								>
-									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-									</svg>
-								</button>
-							</div>
-						{/if}
-
-						<label class="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition {coverImage ? 'hidden' : ''}">
 							<input
-								type="file"
-								accept="image/*"
-								onchange={handleCoverUpload}
-								class="hidden"
-								disabled={uploadingCover}
+								type="radio"
+								name="status"
+								value="live"
+								bind:group={status}
+								class="sr-only"
 							/>
-							{#if uploadingCover}
-								<div class="flex items-center gap-2 text-gray-500">
-									<div class="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-									<span>Uploading...</span>
-								</div>
-							{:else}
-								<div class="text-center">
-									<svg class="w-8 h-8 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-									</svg>
-									<p class="text-sm text-gray-500">Click to upload cover image</p>
-									<p class="text-xs text-gray-400">Max 2MB</p>
-								</div>
-							{/if}
-						</label>
-						<input type="hidden" name="cover_image" value={coverImage} />
-					</div>
-
-					<!-- Calendar Settings -->
-					{#if hasGoogle || hasOutlook}
-						<div class="border-t border-gray-200 pt-6">
-							<h3 class="text-sm font-medium text-gray-900 mb-4">Calendar Settings</h3>
-
-							<!-- Show current global settings -->
-							<div class="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
-								<p class="text-gray-600 mb-1">
-									<span class="font-medium">Check availability from:</span> {getAvailabilityLabel(getDefaultAvailability())}
-								</p>
-								<p class="text-gray-600">
-									<span class="font-medium">Send invite via:</span> {getInviteLabel(getDefaultInviteCalendar())}
-								</p>
-								<p class="text-xs text-gray-500 mt-2">
-									These are your global settings. <a href="/dashboard" class="text-blue-600 hover:underline">Change in Dashboard</a>
-								</p>
+							<span class="w-2 h-2 rounded-full {status === 'live' ? 'bg-emerald-400' : 'bg-zinc-500'}"></span>
+							<div class="text-left">
+								<div class="text-xs font-bold">🟢 Live</div>
+								<div class="text-[10px] opacity-75">Visible to clients</div>
 							</div>
-
-							<!-- Override checkbox -->
-							<div class="flex items-center mb-4">
-								<input
-									type="checkbox"
-									id="override_calendar_settings"
-									name="override_calendar_settings"
-									bind:checked={overrideCalendarSettings}
-									class="h-4 w-4 text-blue-600 rounded border-gray-300"
-								/>
-								<label for="override_calendar_settings" class="ml-2 text-sm text-gray-700">
-									Override global calendar settings for this event type
-								</label>
-							</div>
-
-							{#if overrideCalendarSettings}
-								<!-- Availability Calendars -->
-								<div class="mb-4">
-									<label for="availability_calendars" class="block text-sm font-medium text-gray-700 mb-2">
-										Check availability from
-									</label>
-									<select
-										id="availability_calendars"
-										name="availability_calendars"
-										bind:value={availabilityCalendars}
-										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-									>
-										{#if hasGoogle && hasOutlook}
-											<option value="both">Both Google & Outlook calendars</option>
-										{/if}
-										{#if hasGoogle}
-											<option value="google">Google Calendar only</option>
-										{/if}
-										{#if hasOutlook}
-											<option value="outlook">Outlook Calendar only</option>
-										{/if}
-									</select>
-									<p class="text-xs text-gray-500 mt-1">
-										Which calendars to check when showing available time slots
-									</p>
-								</div>
-
-								<!-- Invite Calendar -->
-								<div>
-									<label for="invite_calendar" class="block text-sm font-medium text-gray-700 mb-2">
-										Send calendar invite via
-									</label>
-									<select
-										id="invite_calendar"
-										name="invite_calendar"
-										bind:value={inviteCalendar}
-										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-									>
-										{#if hasGoogle}
-											<option value="google">Google Calendar (with Google Meet)</option>
-										{/if}
-										{#if hasOutlook}
-											<option value="outlook">Outlook Calendar (with Microsoft Teams)</option>
-										{/if}
-									</select>
-									<p class="text-xs text-gray-500 mt-1">
-										The attendee will receive an invite from this calendar with the meeting link
-									</p>
-								</div>
-							{/if}
-						</div>
-					{:else}
-						<div class="border-t border-gray-200 pt-6">
-							<p class="text-sm text-gray-500">
-								Connect a calendar in <a href="/dashboard" class="text-blue-600 hover:underline">Dashboard Settings</a> to configure calendar options.
-							</p>
-						</div>
-					{/if}
-
-					<!-- Is Active -->
-					<div class="flex items-center">
-						<input
-							type="checkbox"
-							id="is_active"
-							name="is_active"
-							bind:checked={isActive}
-							class="h-4 w-4 text-blue-600 rounded border-gray-300"
-						/>
-						<label for="is_active" class="ml-2 text-sm text-gray-700">
-							Active (allow people to book this event type)
 						</label>
-					</div>
 
-					<!-- Submit -->
-					<div class="flex gap-4 pt-4">
-						<button
-							type="submit"
-							disabled={saving}
-							class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+						<label
+							class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all {status === 'paused'
+								? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+								: 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10'}"
 						>
-							{saving ? 'Creating...' : 'Create Event Type'}
-						</button>
-						<a
-							href="/dashboard"
-							class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-						>
-							Cancel
-						</a>
+							<input
+								type="radio"
+								name="status"
+								value="paused"
+								bind:group={status}
+								class="sr-only"
+							/>
+							<span class="w-2 h-2 rounded-full {status === 'paused' ? 'bg-amber-400' : 'bg-zinc-500'}"></span>
+							<div class="text-left">
+								<div class="text-xs font-bold">⏸️ Paused</div>
+								<div class="text-[10px] opacity-75">Hidden from clients</div>
+							</div>
+						</label>
 					</div>
 				</div>
-			</form>
-		</div>
-	</main>
+			</div>
+
+			<!-- Session Duration Options (Chips) -->
+			<div>
+				<div class="flex items-center justify-between mb-2">
+					<label class="block text-xs font-bold uppercase tracking-wider text-zinc-300">
+						Available Session Durations *
+					</label>
+					<span class="text-[11px] text-zinc-500">Clients can choose duration when booking</span>
+				</div>
+				<div class="flex flex-wrap gap-2.5">
+					{#each durationOptions as dur}
+						<button
+							type="button"
+							onclick={() => toggleDuration(dur)}
+							class="px-4 py-2 rounded-xl text-xs font-semibold border transition-all {selectedDurations.includes(dur)
+								? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_16px_rgba(59,130,246,0.4)]'
+								: 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white'}"
+						>
+							{dur} Minutes
+						</button>
+					{/each}
+				</div>
+				<!-- Hidden inputs for form data -->
+				{#each selectedDurations as dur}
+					<input type="hidden" name="durations" value={dur} />
+				{/each}
+			</div>
+
+			<!-- Specialist / Expert Assignment Section -->
+			<div class="pt-4 border-t border-white/10">
+				<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+					<div>
+						<label class="block text-xs font-bold uppercase tracking-wider text-zinc-200">
+							Assign Specialists / Experts *
+						</label>
+						<p class="text-[11px] text-zinc-400 mt-0.5">
+							Only selected team members will be available for clients to choose under this service.
+						</p>
+					</div>
+
+					<div class="flex items-center gap-2 text-xs">
+						<button
+							type="button"
+							onclick={selectAllExperts}
+							class="text-blue-400 hover:text-blue-300 font-semibold transition-colors"
+						>
+							Select All
+						</button>
+						<span class="text-zinc-600">•</span>
+						<button
+							type="button"
+							onclick={clearAllExperts}
+							class="text-zinc-400 hover:text-white font-semibold transition-colors"
+						>
+							Deselect All
+						</button>
+					</div>
+				</div>
+
+				{#if data.teamMembers && data.teamMembers.length > 0}
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+						{#each data.teamMembers as member}
+							<label
+								class="flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all {selectedExpertIds.includes(member.id)
+									? 'bg-blue-600/15 border-blue-500/40 text-white shadow-[0_0_12px_rgba(59,130,246,0.2)]'
+									: 'bg-white/[0.02] border-white/10 text-zinc-400 hover:bg-white/5'}"
+							>
+								<div class="flex items-center gap-3 min-w-0">
+									{#if member.profile_image}
+										<img
+											src={member.profile_image}
+											alt={member.name}
+											class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0"
+										/>
+									{:else}
+										<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xs text-white shrink-0">
+											{member.name?.charAt(0) || 'E'}
+										</div>
+									{/if}
+									<div class="min-w-0 flex-1">
+										<p class="text-xs font-bold text-white truncate">{member.name}</p>
+										<p class="text-[11px] text-zinc-400 truncate">{member.role_title || member.role}</p>
+									</div>
+								</div>
+
+								<input
+									type="checkbox"
+									name="assigned_experts"
+									value={member.id}
+									checked={selectedExpertIds.includes(member.id)}
+									onchange={() => toggleExpert(member.id)}
+									class="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-0 focus:ring-offset-0 shrink-0"
+								/>
+							</label>
+						{/each}
+					</div>
+				{:else}
+					<div class="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+						⚠️ No team members found in the organization. You can assign specialists later from the Edit page.
+					</div>
+				{/if}
+			</div>
+
+			<!-- Description -->
+			<div class="pt-4 border-t border-white/10">
+				<label for="description" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-2">
+					Service Description
+				</label>
+				<textarea
+					id="description"
+					name="description"
+					bind:value={description}
+					rows={4}
+					placeholder="Describe what clients can expect during this consultation..."
+					class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all resize-none"
+				></textarea>
+			</div>
+
+			<!-- Action Buttons -->
+			<div class="pt-6 border-t border-white/10 flex items-center justify-end gap-4">
+				<a
+					href="/dashboard/event-types"
+					class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-zinc-400 hover:text-white transition-colors"
+				>
+					Cancel
+				</a>
+				<button
+					type="submit"
+					disabled={isSaving}
+					class="btn-electric px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-[0_0_24px_rgba(59,130,246,0.4)] disabled:opacity-50"
+				>
+					<span>{isSaving ? 'Creating Service...' : 'Create Consultation Service →'}</span>
+				</button>
+			</div>
+		</form>
+	</div>
 </div>

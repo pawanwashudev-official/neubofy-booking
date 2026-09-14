@@ -27,8 +27,10 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 					u.name as host_name, u.email as host_email, u.settings as host_settings,
 					u.outlook_refresh_token
 				 FROM event_types et
-				 JOIN users u ON u.id = et.user_id
-				 WHERE et.organization_id = ? AND et.slug = ? AND et.is_active = 1`
+				 LEFT JOIN users u ON u.id = et.user_id
+				 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main')
+				   AND et.slug = ?
+				   AND COALESCE(et.is_active, 1) = 1`
 			)
 			.bind(organization.id, params.slug)
 			.first<{
@@ -40,14 +42,33 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 				is_active: number;
 				cover_image: string | null;
 				invite_calendar: string | null;
-				host_user_id: string;
-				host_name: string;
-				host_email: string;
+				host_user_id: string | null;
+				host_name: string | null;
+				host_email: string | null;
 				host_settings: string | null;
 				outlook_refresh_token: string | null;
 			}>();
 
-		if (!eventType) throw error(404, 'Event type not found');
+		if (!eventType) throw error(404, 'Event type not found or inactive');
+
+		// If no direct host_user_id, resolve from assigned event_type_members
+		if (!eventType.host_user_id) {
+			const member = await db
+				.prepare(
+					`SELECT u.id as host_user_id, u.name as host_name, u.email as host_email,
+					        u.settings as host_settings, u.outlook_refresh_token
+					 FROM event_type_members etm
+					 JOIN users u ON u.id = etm.user_id
+					 WHERE etm.event_type_id = ? AND etm.is_active = 1
+					 LIMIT 1`
+				)
+				.bind(eventType.id)
+				.first<{ host_user_id: string; host_name: string; host_email: string; host_settings: string | null; outlook_refresh_token: string | null }>();
+
+			if (member) {
+				Object.assign(eventType, member);
+			}
+		}
 
 		let hostSettings: { timeFormat?: string; defaultInviteCalendar?: string } = {};
 		try {

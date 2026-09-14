@@ -1,5 +1,5 @@
 /**
- * Booking confirmation email template
+ * Booking confirmation email template - Neubofy Premium Dark Theme
  */
 
 import type { BookingEmailData } from '../types';
@@ -18,21 +18,30 @@ import {
 export function generateBookingEmail(data: BookingEmailData): string {
 	const { formatDate, formatTime } = createEmailFormatters(data.timeFormat, data.timezone);
 	const contactEmail = data.hostContactEmail || data.hostEmail;
-	const brandColor = data.brandColor || '#3b82f6';
+	const brandColor = data.brandColor || '#2563eb';
 
 	const cancelUrl = `${data.appUrl}/cancel/${data.bookingId}`;
 	const rescheduleUrl = `${data.appUrl}/reschedule/${data.bookingId}`;
 
 	const headerContent = `
-		<div style="width: 64px; height: 64px; margin: 0 auto 20px; background-color: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-			<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M5 13l4 4L19 7"></path>
-			</svg>
-		</div>
-		<h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">Meeting Confirmed!</h1>
+		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+			<tr>
+				<td align="center">
+					<div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; text-align: center; background-color: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 50%; margin-bottom: 16px;">
+						<span style="font-size: 26px; color: #10b981; line-height: 56px;">✓</span>
+					</div>
+					<h1 style="margin: 0 0 8px; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+						Consultation Confirmed!
+					</h1>
+					<p style="margin: 0; color: #a1a1aa; font-size: 14px;">
+						Your session with <strong style="color: #ffffff;">${data.hostName}</strong> is locked in.
+					</p>
+				</td>
+			</tr>
+		</table>
 	`;
 
-	const meetingLabel = data.meetingType === 'teams' ? 'Join Microsoft Teams Meeting' : 'Join Google Meet';
+	const meetingLabel = data.meetingType === 'teams' ? 'Join Microsoft Teams Meeting' : 'Join Google Meet Session';
 
 	const meetingDetails = generateMeetingDetailsCard({
 		eventName: data.eventName,
@@ -55,11 +64,11 @@ export function generateBookingEmail(data: BookingEmailData): string {
 	const managementLinks = generateManagementLinks(rescheduleUrl, cancelUrl, brandColor);
 
 	const bodyContent = `
-		<p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 24px;">
-			Hi <strong>${data.attendeeName}</strong>,
+		<p style="margin: 0 0 16px; color: #e4e4e7; font-size: 15px; line-height: 24px;">
+			Hi <strong style="color: #ffffff;">${data.attendeeName}</strong>,
 		</p>
-		<p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 24px;">
-			Your meeting with <strong>${data.hostName}</strong> has been confirmed. We're looking forward to speaking with you!
+		<p style="margin: 0 0 24px; color: #d4d4d8; font-size: 15px; line-height: 24px;">
+			Thank you for scheduling with Neubofy. Your consultation has been added to our calendar and our expert has been notified.
 		</p>
 
 		${meetingDetails}
@@ -67,18 +76,27 @@ export function generateBookingEmail(data: BookingEmailData): string {
 		${actionButton}
 		${managementLinks}
 
-		<p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 20px;">
-			If you need to make changes or have any questions, please reply to this email or contact <a href="mailto:${contactEmail}" style="color: ${brandColor}; text-decoration: none;">${contactEmail}</a>.
-		</p>
+		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #1e2029;">
+			<tr>
+				<td>
+					<p style="margin: 0; color: #a1a1aa; font-size: 13px; line-height: 20px;">
+						Need to prepare materials or have preliminary questions? Reply directly to this email or reach our team at <a href="mailto:${contactEmail}" style="color: #60a5fa; text-decoration: none;">${contactEmail}</a>.
+					</p>
+				</td>
+			</tr>
+		</table>
 	`;
 
 	return generateBaseEmail({
-		title: 'Meeting Confirmed',
-		headerGradient: brandColor,
+		title: `Confirmed: ${data.eventName} with ${data.hostName}`,
+		badgeText: 'CONFIRMED',
+		badgeColor: '#10b981',
+		badgeBg: 'rgba(16, 185, 129, 0.15)',
 		headerContent,
 		bodyContent,
-		footerContent: `This is an automated email from ${data.hostName}'s meeting scheduler.`,
-		hostName: data.hostName
+		footerContent: `This is an automated confirmation for ${data.attendeeName} regarding ${data.eventName}.`,
+		hostName: data.hostName,
+		brandColor
 	});
 }
 
@@ -93,28 +111,26 @@ export function generateBookingEmailText(data: BookingEmailData): string {
 	const rescheduleUrl = `${data.appUrl}/reschedule/${data.bookingId}`;
 
 	return `
-Meeting Confirmed!
+[NEUBOFY] CONSULTATION CONFIRMED
 
 Hi ${data.attendeeName},
 
-Your meeting with ${data.hostName} has been confirmed. We're looking forward to speaking with you!
+Your meeting with ${data.hostName} has been confirmed.
 
-MEETING DETAILS
-Event: ${data.eventName}
-${data.eventDescription ? `Description: ${data.eventDescription}` : ''}
-Time: ${formatDateTime(data.startTime)} - ${formatDateTime(data.endTime)}
-${data.meetingUrl ? `Location: ${data.meetingUrl}` : ''}
-
-${data.meetingUrl ? `Join Meeting: ${data.meetingUrl}` : ''}
-
+SESSION DETAILS
+-------------------------------------------
+Topic: ${data.eventName}
+${data.eventDescription ? `Description: ${data.eventDescription}\n` : ''}Time: ${formatDateTime(data.startTime)} - ${formatDateTime(data.endTime)}
+${data.meetingUrl ? `Meeting Link: ${data.meetingUrl}\n` : ''}
+${data.attendeeNotes ? `Your Notes: ${data.attendeeNotes}\n` : ''}
 MANAGE YOUR BOOKING
+-------------------------------------------
 Reschedule: ${rescheduleUrl}
 Cancel: ${cancelUrl}
 
-If you need to make changes or have any questions, please reply to this email or contact ${contactEmail}.
+Support: ${contactEmail}
 
 ---
-This is an automated email from ${data.hostName}'s meeting scheduler.
-Powered by Neubofy - https://neubofy.in
+Powered by Neubofy Enterprise Consultations (https://neubofy.in)
 	`.trim();
 }

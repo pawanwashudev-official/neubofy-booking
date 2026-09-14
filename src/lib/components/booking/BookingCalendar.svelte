@@ -80,15 +80,15 @@
 
 <div>
 	<div class="flex items-center justify-between mb-4">
-		<h3 class="text-lg font-medium text-gray-900">{formatMonthYear(currentMonth)}</h3>
-		<div class="flex gap-2">
-			<button onclick={onPrevMonth} class="p-2 hover:bg-gray-100 rounded-full transition" aria-label="Previous month">
-				<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<h3 class="text-base font-bold text-white tracking-tight">{formatMonthYear(currentMonth)}</h3>
+		<div class="flex gap-1.5">
+			<button type="button" onclick={onPrevMonth} class="p-2 hover:bg-white/10 rounded-xl transition text-zinc-400 hover:text-white" aria-label="Previous month">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
 				</svg>
 			</button>
-			<button onclick={onNextMonth} class="p-2 hover:bg-gray-100 rounded-full transition" aria-label="Next month">
-				<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<button type="button" onclick={onNextMonth} class="p-2 hover:bg-white/10 rounded-xl transition text-zinc-400 hover:text-white" aria-label="Next month">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
 				</svg>
 			</button>
@@ -97,11 +97,11 @@
 
 	<div class="grid grid-cols-7 gap-1 mb-2">
 		{#each weekDays as day}
-			<div class="text-center text-xs font-medium text-gray-500 py-2">{day}</div>
+			<div class="text-center text-[11px] font-bold uppercase tracking-wider text-zinc-500 py-1.5">{day}</div>
 		{/each}
 	</div>
 
-	<div class="grid grid-cols-7 gap-1">
+	<div class="grid grid-cols-7 gap-1.5">
 		{#each calendarDays() as day}
 			{@const hasSlots = availableDates.has(day.dateStr)}
 			{@const isClickable = day.isAvailable && hasSlots}
@@ -110,13 +110,12 @@
 				type="button"
 				onclick={() => isClickable && onDateSelect(day.dateStr)}
 				disabled={!isClickable}
-				class="aspect-square flex items-center justify-center text-sm rounded-full transition relative
-					{!day.isCurrentMonth ? 'text-gray-300' : ''}
-					{isClickable && !isSelected ? 'font-semibold cursor-pointer' : ''}
-					{day.isAvailable && !hasSlots && day.isCurrentMonth ? 'text-gray-400' : ''}
-					{!day.isAvailable && day.isCurrentMonth ? 'text-gray-300 cursor-not-allowed' : ''}
-					{isSelected ? 'text-white' : ''}"
-				style="{isClickable && !isSelected ? `background-color: ${brandLighter}; color: ${brandDark}` : ''}{isSelected ? `background-color: ${brandColor}` : ''}"
+				class="aspect-square flex items-center justify-center text-xs font-semibold rounded-xl transition-all relative
+					{!day.isCurrentMonth ? 'text-zinc-600 opacity-40' : ''}
+					{isClickable && !isSelected ? 'text-zinc-200 hover:bg-blue-600/20 hover:text-blue-400 hover:border hover:border-blue-500/40 cursor-pointer' : ''}
+					{day.isAvailable && !hasSlots && day.isCurrentMonth ? 'text-zinc-600 cursor-not-allowed' : ''}
+					{!day.isAvailable && day.isCurrentMonth ? 'text-zinc-700 cursor-not-allowed' : ''}
+					{isSelected ? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(59,130,246,0.6)] font-bold border border-blue-400' : ''}"
 			>
 				{day.date.getDate()}
 			</button>
