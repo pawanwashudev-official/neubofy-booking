@@ -3,14 +3,15 @@
  */
 
 import { redirect, type RequestEvent } from '@sveltejs/kit';
-import { getCurrentUser } from '$lib/server/auth';
+import { getAuthContext, isOrganizationOwner } from '$lib/server/auth';
 
 export const load = async (event: RequestEvent) => {
-	const userId = await getCurrentUser(event);
+	const auth = await getAuthContext(event);
 
-	if (!userId) {
+	if (!auth) {
 		throw redirect(302, '/auth/login');
 	}
+	if (!isOrganizationOwner(auth.role)) throw redirect(302, '/dashboard');
 
 	return {};
 };

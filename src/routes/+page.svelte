@@ -63,6 +63,9 @@
 									<span>{eventType.duration} min</span>
 								</div>
 							</div>
+							{#if eventType.expert_count > 1}
+								<p class="mt-3 text-xs text-gray-500">{eventType.expert_count} experts available</p>
+							{/if}
 						</a>
 					{/each}
 				</div>

@@ -10,6 +10,7 @@
 		is_enabled: boolean;
 		subject: string;
 		custom_message: string | null;
+		html_template: string | null;
 	}
 
 	let templates = $state<EmailTemplate[]>([]);
@@ -24,6 +25,7 @@
 	// Edit states for each template
 	let editSubjects = $state<Record<string, string>>({});
 	let editMessages = $state<Record<string, string>>({});
+	let editHtml = $state<Record<string, string>>({});
 
 	onMount(async () => {
 		await fetchTemplates();
@@ -40,6 +42,7 @@
 			templates.forEach(t => {
 				editSubjects[t.template_type] = t.subject || t.default_subject;
 				editMessages[t.template_type] = t.custom_message || '';
+				editHtml[t.template_type] = t.html_template || '';
 			});
 		} catch (err: any) {
 			error = err.message || 'Failed to load email templates';
@@ -60,7 +63,8 @@
 					template_type: template.template_type,
 					is_enabled: !template.is_enabled,
 					subject: editSubjects[template.template_type],
-					custom_message: editMessages[template.template_type] || null
+					custom_message: editMessages[template.template_type] || null,
+					html_template: editHtml[template.template_type] || null
 				})
 			});
 
@@ -92,7 +96,8 @@
 					template_type: template.template_type,
 					is_enabled: template.is_enabled,
 					subject: editSubjects[template.template_type],
-					custom_message: editMessages[template.template_type] || null
+					custom_message: editMessages[template.template_type] || null,
+					html_template: editHtml[template.template_type] || null
 				})
 			});
 
@@ -104,7 +109,8 @@
 					? {
 						...t,
 						subject: editSubjects[template.template_type],
-						custom_message: editMessages[template.template_type] || null
+						custom_message: editMessages[template.template_type] || null,
+						html_template: editHtml[template.template_type] || null
 					}
 					: t
 			);
@@ -277,6 +283,12 @@
 											<p class="text-xs text-gray-500 mt-1">This message will be added to the email template</p>
 										</div>
 
+										<div>
+											<label class="block text-sm font-medium text-gray-700 mb-1" for="html-{template.template_type}">Full HTML Template (Optional)</label>
+											<textarea id="html-{template.template_type}" bind:value={editHtml[template.template_type]} placeholder="<!doctype html>..." rows="10" class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+											<p class="text-xs text-gray-500 mt-1">Unsafe scripts and event handlers are removed before storage.</p>
+										</div>
+
 										<div class="flex justify-end gap-2">
 											<button
 												onclick={() => expandedTemplate = null}
@@ -366,6 +378,11 @@
 												rows="3"
 												class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
 											></textarea>
+										</div>
+
+										<div>
+											<label class="block text-sm font-medium text-gray-700 mb-1" for="html-reminder-{template.template_type}">Full HTML Template (Optional)</label>
+											<textarea id="html-reminder-{template.template_type}" bind:value={editHtml[template.template_type]} placeholder="<!doctype html>..." rows="10" class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
 										</div>
 
 										<div class="flex justify-end gap-2">

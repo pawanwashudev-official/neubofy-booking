@@ -20,16 +20,19 @@ export const load: PageServerLoad = async (event) => {
 
 	// Get user info
 	const user = await db
-		.prepare('SELECT id, email, name, slug, profile_image, brand_color, settings, contact_email FROM users WHERE id = ?')
+		.prepare('SELECT id, email, name, slug, profile_image, brand_color, settings, contact_email, public_title, public_bio, public_specialties, public_contact_email, public_mobile, public_social_handle, public_profile_enabled FROM users WHERE id = ?')
 		.bind(auth.userId)
-		.first<{ id: string; email: string; name: string; slug: string; profile_image: string | null; brand_color: string | null; settings: string | null; contact_email: string | null }>();
+		.first();
 
 	// Get event types
 	const eventTypes = await db
 		.prepare(
 			`SELECT id, name, slug, duration_minutes as duration, description, is_active
 			FROM event_types
-			WHERE organization_id = ? AND (? = 1 OR user_id = ?)
+			WHERE organization_id = ? AND (? = 1 OR EXISTS (
+				SELECT 1 FROM event_type_hosts h
+				WHERE h.event_type_id = event_types.id AND h.user_id = ? AND h.is_active = 1
+			))
 			ORDER BY name ASC`
 		)
 		.bind(auth.organizationId, isOrganizationAdmin(auth.role) ? 1 : 0, auth.userId)

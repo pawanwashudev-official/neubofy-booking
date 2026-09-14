@@ -19,6 +19,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	try {
 		const body = await request.json() as {
 			eventSlug: string;
+			expertId?: string;
 			startTime: string;
 			endTime: string;
 			attendeeName: string;
@@ -27,7 +28,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			turnstileToken?: string;
 			timezone?: string;
 		};
-		const { eventSlug, startTime, endTime, attendeeName, attendeeEmail, notes, turnstileToken, timezone } = body;
+		const { eventSlug, expertId, startTime, endTime, attendeeName, attendeeEmail, notes, turnstileToken, timezone } = body;
 
 		// Validate required fields
 		if (!eventSlug || !startTime || !endTime || !attendeeName || !attendeeEmail) {
@@ -88,9 +89,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			throw error(404, 'Event type not found or inactive');
 		}
 
+		const selectedHost = await db.prepare(
+			`SELECT h.user_id
+			 FROM event_type_hosts h
+			 JOIN organization_members om ON om.organization_id = h.organization_id AND om.user_id = h.user_id AND om.is_active = 1
+			 WHERE h.event_type_id = ? AND h.is_active = 1 AND h.user_id = COALESCE(?, h.user_id)
+			 ORDER BY CASE WHEN h.user_id = ? THEN 0 ELSE 1 END
+			 LIMIT 1`
+		).bind(eventType.id, expertId, expertId).first<{ user_id: string }>();
+		if (!selectedHost) throw error(400, 'Selected expert is not assigned to this event');
+
 		const user = await db
 			.prepare('SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token FROM users WHERE id = ? AND is_active = 1')
-			.bind(eventType.user_id)
+			.bind(selectedHost.user_id)
 			.first<{ id: string; email: string; name: string; slug: string; contact_email: string | null; settings: string | null; brand_color: string | null; outlook_refresh_token: string | null }>();
 
 		if (!user) throw error(404, 'Booking host not found');
@@ -288,7 +299,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					await sendBookingEmail(
 						{
 							...emailData,
-							customMessage: template?.custom_message
+							customMessage: template?.custom_message,
+							htmlTemplate: template?.html_template
 						},
 						{
 							apiKey: env.RESEND_API_KEY,

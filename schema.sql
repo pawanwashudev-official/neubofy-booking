@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS users (
     contact_email TEXT,
     is_active BOOLEAN DEFAULT 1,
     last_login_at DATETIME
+    ,public_title TEXT
+    ,public_bio TEXT
+    ,public_specialties TEXT
+    ,public_contact_email TEXT
+    ,public_mobile TEXT
+    ,public_social_handle TEXT
+    ,public_profile_enabled BOOLEAN DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_slug ON users(slug);
@@ -96,6 +103,25 @@ CREATE TABLE IF NOT EXISTS event_types (
 
 CREATE INDEX IF NOT EXISTS idx_event_types_user ON event_types(user_id);
 CREATE INDEX IF NOT EXISTS idx_event_types_active ON event_types(user_id, is_active);
+
+-- Experts assigned to organization events
+CREATE TABLE IF NOT EXISTS event_type_hosts (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    event_type_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_type_id, user_id),
+    FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_type_hosts_event ON event_type_hosts(event_type_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_event_type_hosts_org ON event_type_hosts(organization_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_event_type_hosts_user ON event_type_hosts(user_id, is_active);
 
 -- Availability rules (recurring weekly schedule)
 CREATE TABLE IF NOT EXISTS availability_rules (
@@ -216,6 +242,7 @@ CREATE TABLE IF NOT EXISTS email_templates (
     is_enabled BOOLEAN DEFAULT 1,
     subject TEXT,
     custom_message TEXT, -- Additional message to include in template
+    html_template TEXT, -- Optional organization-owned full HTML document
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

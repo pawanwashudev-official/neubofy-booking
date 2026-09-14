@@ -7,6 +7,13 @@
 			brand_color?: string;
 			contact_email?: string | null;
 			settings?: string | null;
+			public_title?: string | null;
+			public_bio?: string | null;
+			public_specialties?: string | null;
+			public_contact_email?: string | null;
+			public_mobile?: string | null;
+			public_social_handle?: string | null;
+			public_profile_enabled?: number | boolean | null;
 		} | null;
 		onProfileSaved?: () => void;
 	}
@@ -28,6 +35,13 @@
 	let profileImage = $state(user?.profile_image || '');
 	let brandColor = $state(user?.brand_color || '#3b82f6');
 	let contactEmail = $state(user?.contact_email || '');
+	let publicTitle = $state(user?.public_title || '');
+	let publicBio = $state(user?.public_bio || '');
+	let publicSpecialties = $state(user?.public_specialties || '');
+	let publicContactEmail = $state(user?.public_contact_email || '');
+	let publicMobile = $state(user?.public_mobile || '');
+	let publicSocialHandle = $state(user?.public_social_handle || '');
+	let publicProfileEnabled = $state(Boolean(user?.public_profile_enabled));
 	let timeFormat = $state<'12h' | '24h'>(getUserSettings().timeFormat || '12h');
 	let savingProfile = $state(false);
 	let uploadingImage = $state(false);
@@ -98,6 +112,13 @@
 					brandColor,
 					contactEmail,
 					timeFormat
+					publicTitle,
+					publicBio,
+					publicSpecialties,
+					publicContactEmail,
+					publicMobile,
+					publicSocialHandle,
+					publicProfileEnabled
 				})
 			});
 
@@ -210,6 +231,43 @@
 						</p>
 					</div>
 				</div>
+			</div>
+
+			<div class="mt-6 border-t border-gray-200 pt-6">
+				<h3 class="text-sm font-medium text-gray-900">Public expert profile</h3>
+				<p class="mt-1 text-xs text-gray-500">This information can be shown to clients when they choose an expert for an event.</p>
+				<div class="mt-4 grid gap-4 sm:grid-cols-2">
+					<div>
+						<label for="public-title" class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+						<input id="public-title" bind:value={publicTitle} maxlength="120" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Senior consultant" />
+					</div>
+					<div>
+						<label for="public-specialties" class="block text-sm font-medium text-gray-700 mb-2">Specialties</label>
+						<input id="public-specialties" bind:value={publicSpecialties} maxlength="500" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Strategy, onboarding" />
+					</div>
+				</div>
+				<div class="mt-4">
+					<label for="public-bio" class="block text-sm font-medium text-gray-700 mb-2">Bio</label>
+					<textarea id="public-bio" bind:value={publicBio} maxlength="2000" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="A short introduction for clients"></textarea>
+				</div>
+				<div class="mt-4 grid gap-4 sm:grid-cols-3">
+					<div>
+						<label for="public-contact-email" class="block text-sm font-medium text-gray-700 mb-2">Public email</label>
+						<input id="public-contact-email" type="email" bind:value={publicContactEmail} class="w-full px-3 py-2 border border-gray-300 rounded-md" />
+					</div>
+					<div>
+						<label for="public-mobile" class="block text-sm font-medium text-gray-700 mb-2">Public mobile</label>
+						<input id="public-mobile" bind:value={publicMobile} class="w-full px-3 py-2 border border-gray-300 rounded-md" />
+					</div>
+					<div>
+						<label for="public-social-handle" class="block text-sm font-medium text-gray-700 mb-2">Social handle</label>
+						<input id="public-social-handle" bind:value={publicSocialHandle} class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="@username" />
+					</div>
+				</div>
+				<label class="mt-4 flex items-center gap-2 text-sm text-gray-700">
+					<input type="checkbox" bind:checked={publicProfileEnabled} class="h-4 w-4 rounded border-gray-300 text-blue-600" />
+					Allow clients to see this profile when choosing an expert
+				</label>
 			</div>
 
 			<!-- Brand Color -->

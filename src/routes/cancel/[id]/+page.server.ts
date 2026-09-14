@@ -185,6 +185,7 @@ export const actions: Actions = {
 									hostContactEmail: fullBooking.contact_email || undefined,
 									appUrl: env.APP_URL || '',
 									customMessage: reason || template?.custom_message,
+									htmlTemplate: template?.html_template,
 									timeFormat,
 									brandColor: fullBooking.brand_color || undefined
 								},

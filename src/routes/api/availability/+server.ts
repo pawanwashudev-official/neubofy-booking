@@ -24,6 +24,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	}
 
 	const eventSlug = url.searchParams.get('event');
+	const requestedExpertId = url.searchParams.get('expert');
 	const date = url.searchParams.get('date'); // YYYY-MM-DD
 
 	if (!eventSlug || !date) {
@@ -33,21 +34,31 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	try {
 		const db = env.DB;
 
-		// Check cache first to avoid expensive DB/API calls
-		const cacheKey = `availability:${eventSlug}:${date}`;
+		const organization = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
+		if (!organization) throw error(404, 'Organization not found');
+
+		const eventType = await db
+			.prepare('SELECT id, user_id, duration_minutes as duration, availability_calendars FROM event_types WHERE organization_id = ? AND slug = ? AND is_active = 1')
+			.bind(organization.id, eventSlug)
+			.first<{ id: string; user_id: string; duration: number; availability_calendars: string | null }>();
+		if (!eventType) throw error(404, 'Event type not found or inactive');
+
+		const host = await db.prepare(
+			`SELECT u.id, u.slug, u.timezone, u.settings
+			 FROM event_type_hosts h JOIN users u ON u.id = h.user_id
+			 JOIN organization_members om ON om.organization_id = h.organization_id AND om.user_id = h.user_id
+			 WHERE h.event_type_id = ? AND h.is_active = 1 AND om.is_active = 1
+			 AND h.user_id = COALESCE(?, h.user_id)
+			 ORDER BY CASE WHEN h.user_id = ? THEN 0 ELSE 1 END, u.name
+			 LIMIT 1`
+		).bind(eventType.id, requestedExpertId, requestedExpertId).first<{ id: string; slug: string; timezone: string | null; settings: string | null }>();
+		if (!host) throw error(400, 'Selected expert is not assigned to this event');
+
+		const cacheKey = `availability:${organization.id}:${eventType.id}:${host.id}:${date}`;
 		const cached = await env.KV.get(cacheKey);
-		if (cached) {
-			return json(JSON.parse(cached));
-		}
+		if (cached) return json(JSON.parse(cached));
 
-		// Get the first (and only) user for single-user setup
-		const user = await db
-			.prepare('SELECT id, slug, timezone, settings FROM users LIMIT 1')
-			.first<{ id: string; slug: string; timezone: string | null; settings: string | null }>();
-
-		if (!user) {
-			throw error(404, 'User not found');
-		}
+		const user = host;
 
 		const userTimezone = user.timezone || 'UTC';
 
@@ -57,15 +68,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			userSettings = user.settings ? JSON.parse(user.settings) : {};
 		} catch {
 			userSettings = {};
-		}
-
-		const eventType = await db
-			.prepare('SELECT id, duration_minutes as duration, availability_calendars FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1')
-			.bind(user.id, eventSlug)
-			.first<{ id: string; duration: number; availability_calendars: string | null }>();
-
-		if (!eventType) {
-			throw error(404, 'Event type not found or inactive');
 		}
 
 		// Get calendar settings: use event type override if set, otherwise use global settings

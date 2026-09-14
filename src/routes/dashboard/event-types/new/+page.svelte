@@ -11,6 +11,7 @@
 	let description = $state('');
 	let isActive = $state(true);
 	let coverImage = $state('');
+	let selectedExpertIds = $state<string[]>([data.currentUserId]);
 	let saving = $state(false);
 	let uploadingCover = $state(false);
 
@@ -129,6 +130,17 @@
 		<div class="bg-white rounded-lg shadow-sm p-6">
 			<form method="POST" use:enhance={handleSubmit}>
 				<div class="space-y-6">
+					{#if data.role === 'admin' || data.role === 'owner'}
+						<div>
+							<label for="expert_ids" class="block text-sm font-medium text-gray-700 mb-2">Assigned experts</label>
+							<select id="expert_ids" name="expert_ids" multiple bind:value={selectedExpertIds} class="w-full min-h-32 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+								{#each data.experts as expert}
+									<option value={expert.id}>{expert.name}{expert.public_title ? ` - ${expert.public_title}` : ''}</option>
+								{/each}
+							</select>
+							<p class="text-xs text-gray-500 mt-1">Clients will choose one of these experts before seeing availability.</p>
+						</div>
+					{/if}
 					<!-- Event Name -->
 					<div>
 						<label for="name" class="block text-sm font-medium text-gray-700 mb-2">

@@ -157,6 +157,7 @@ export const POST = async (event: RequestEvent) => {
 							hostContactEmail: booking.contact_email || undefined,
 							appUrl: env.APP_URL || '',
 							customMessage: message || template?.custom_message || null,
+							htmlTemplate: template?.html_template,
 							timeFormat,
 							brandColor: booking.brand_color || undefined
 						},

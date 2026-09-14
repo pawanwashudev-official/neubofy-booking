@@ -24,7 +24,7 @@ export const GET = async (event: RequestEvent) => {
 export const DELETE = async (event: RequestEvent) => {
 	const auth = await getAuthContext(event);
 	if (!auth) throw error(401, 'Unauthorized');
-	if (!isOrganizationAdmin(auth.role)) throw error(403, 'Organization administrator access required');
+	if (!isOrganizationOwner(auth.role)) throw error(403, 'Only the organization owner can remove organization members');
 
 	const body = await event.request.json() as { userId?: string; confirmation?: string };
 	if (!body.userId) throw error(400, 'User ID is required');

@@ -4,7 +4,8 @@
  */
 
 import { json, error, type RequestEvent } from '@sveltejs/kit';
-import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
+import { getAuthContext, isOrganizationOwner } from '$lib/server/auth';
+import DOMPurify from 'isomorphic-dompurify';
 
 export interface EmailTemplate {
 	id: string;
@@ -12,6 +13,7 @@ export interface EmailTemplate {
 	is_enabled: number;
 	subject: string | null;
 	custom_message: string | null;
+	html_template: string | null;
 }
 
 // Default templates with descriptions
@@ -53,7 +55,7 @@ export const GET = async (event: RequestEvent) => {
 	if (!auth) {
 		throw error(401, 'Unauthorized');
 	}
-	if (!isOrganizationAdmin(auth.role)) throw error(403, 'Organization administrator access required');
+	if (!isOrganizationOwner(auth.role)) throw error(403, 'Only the organization owner can manage email templates');
 
 	const env = event.platform?.env;
 	if (!env) {
@@ -65,7 +67,7 @@ export const GET = async (event: RequestEvent) => {
 	try {
 		// Email templates belong to the organization, not the signed-in member.
 		const templates = await db
-			.prepare('SELECT id, template_type, is_enabled, subject, custom_message FROM email_templates WHERE organization_id = ?')
+			.prepare('SELECT id, template_type, is_enabled, subject, custom_message, html_template FROM email_templates WHERE organization_id = ?')
 			.bind(auth.organizationId)
 			.all<EmailTemplate>();
 
@@ -79,7 +81,8 @@ export const GET = async (event: RequestEvent) => {
 				id: saved?.id || null,
 				is_enabled: saved ? saved.is_enabled === 1 : true,
 				subject: saved?.subject || def.default_subject,
-				custom_message: saved?.custom_message || null
+				custom_message: saved?.custom_message || null,
+				html_template: saved?.html_template || null
 			};
 		});
 
@@ -95,7 +98,7 @@ export const PUT = async (event: RequestEvent) => {
 	if (!auth) {
 		throw error(401, 'Unauthorized');
 	}
-	if (!isOrganizationAdmin(auth.role)) throw error(403, 'Organization administrator access required');
+	if (!isOrganizationOwner(auth.role)) throw error(403, 'Only the organization owner can manage email templates');
 
 	const env = event.platform?.env;
 	if (!env) {
@@ -110,26 +113,31 @@ export const PUT = async (event: RequestEvent) => {
 			is_enabled: boolean;
 			subject?: string | null;
 			custom_message?: string | null;
+			html_template?: string | null;
 		};
-		const { template_type, is_enabled, subject, custom_message } = body;
+		const { template_type, is_enabled, subject, custom_message, html_template } = body;
 
 		// Validate template type
 		const validTypes = DEFAULT_TEMPLATES.map(t => t.template_type);
 		if (!validTypes.includes(template_type)) {
 			throw error(400, 'Invalid template type');
 		}
+		if (html_template && /<\/?(script|iframe|object|embed)\b|\son\w+\s*=|javascript:/i.test(html_template)) {
+			throw error(400, 'HTML template contains unsafe markup');
+		}
+		const safeHtmlTemplate = html_template ? DOMPurify.sanitize(html_template, { USE_PROFILES: { html: true } }) : null;
 
 		const existing = await db.prepare('SELECT id FROM email_templates WHERE organization_id = ? AND template_type = ? LIMIT 1')
 			.bind(auth.organizationId, template_type).first<{ id: string }>();
 		if (existing) {
 			await db.prepare(
-				`UPDATE email_templates SET is_enabled = ?, subject = ?, custom_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-			).bind(is_enabled ? 1 : 0, subject || null, custom_message || null, existing.id).run();
+				`UPDATE email_templates SET is_enabled = ?, subject = ?, custom_message = ?, html_template = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+			).bind(is_enabled ? 1 : 0, subject || null, custom_message || null, safeHtmlTemplate, existing.id).run();
 		} else {
 			await db.prepare(
-				`INSERT INTO email_templates (user_id, organization_id, template_type, is_enabled, subject, custom_message, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-			).bind(auth.userId, auth.organizationId, template_type, is_enabled ? 1 : 0, subject || null, custom_message || null).run();
+				`INSERT INTO email_templates (user_id, organization_id, template_type, is_enabled, subject, custom_message, html_template, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+			).bind(auth.userId, auth.organizationId, template_type, is_enabled ? 1 : 0, subject || null, custom_message || null, safeHtmlTemplate).run();
 		}
 
 		return json({ success: true });

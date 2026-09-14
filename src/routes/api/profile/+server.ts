@@ -33,8 +33,15 @@ export const PUT: RequestHandler = async (event) => {
 			defaultInviteCalendar?: 'google' | 'outlook';
 			// Selected calendars for availability checking
 			selectedGoogleCalendars?: string[];
+			publicTitle?: string | null;
+			publicBio?: string | null;
+			publicSpecialties?: string | null;
+			publicContactEmail?: string | null;
+			publicMobile?: string | null;
+			publicSocialHandle?: string | null;
+			publicProfileEnabled?: boolean;
 		};
-		const { name, profileImage, brandColor, contactEmail, timeFormat, defaultAvailabilityCalendars, defaultInviteCalendar, selectedGoogleCalendars } = body;
+		const { name, profileImage, brandColor, contactEmail, timeFormat, defaultAvailabilityCalendars, defaultInviteCalendar, selectedGoogleCalendars, publicTitle, publicBio, publicSpecialties, publicContactEmail, publicMobile, publicSocialHandle, publicProfileEnabled } = body;
 
 		// Get existing settings
 		const existingUser = await db
@@ -64,6 +71,18 @@ export const PUT: RequestHandler = async (event) => {
 				.bind(JSON.stringify(newSettings), userId)
 				.run();
 
+			return json({ success: true });
+		}
+
+		if (name === undefined && (publicTitle !== undefined || publicBio !== undefined || publicSpecialties !== undefined || publicContactEmail !== undefined || publicMobile !== undefined || publicSocialHandle !== undefined || publicProfileEnabled !== undefined)) {
+			if (publicBio && publicBio.length > 2000) throw error(400, 'Public bio must be 2000 characters or fewer');
+			if (publicTitle && publicTitle.length > 120) throw error(400, 'Public title must be 120 characters or fewer');
+			if (publicSpecialties && publicSpecialties.length > 500) throw error(400, 'Specialties must be 500 characters or fewer');
+			if (publicContactEmail && !isValidEmail(publicContactEmail)) throw error(400, 'Invalid public contact email address');
+			await db.prepare(
+				`UPDATE users SET public_title = ?, public_bio = ?, public_specialties = ?, public_contact_email = ?,
+				 public_mobile = ?, public_social_handle = ?, public_profile_enabled = ? WHERE id = ?`
+			).bind(publicTitle?.trim() || null, publicBio?.trim() || null, publicSpecialties?.trim() || null, publicContactEmail?.trim() || null, publicMobile?.trim() || null, publicSocialHandle?.trim() || null, publicProfileEnabled ? 1 : 0, userId).run();
 			return json({ success: true });
 		}
 

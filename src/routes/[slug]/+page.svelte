@@ -9,6 +9,8 @@
 	import { BookingCalendar, TimeSlotList, BookingForm, BookingSuccess, EventSidebar } from '$lib/components/booking';
 
 	let { data }: { data: PageData } = $props();
+	let selectedExpertId = $state(data.experts?.[0]?.id || data.eventType?.host_user_id || '');
+	const selectedExpert = $derived(data.experts?.find(expert => expert.id === selectedExpertId) || data.experts?.[0]);
 
 	// Sanitize event description to prevent XSS (only in browser, SSR uses escaped version)
 	let sanitizedDescription = $state('');
@@ -158,7 +160,7 @@
 			const month = currentMonth.getMonth() + 1;
 			const monthStr = `${year}-${String(month).padStart(2, '0')}`;
 
-			const response = await fetch(`/api/availability/month?event=${data.slug}&month=${monthStr}`);
+			const response = await fetch(`/api/availability/month?event=${data.slug}&expert=${encodeURIComponent(selectedExpertId)}&month=${monthStr}`);
 			if (!response.ok) throw new Error('Failed to fetch availability');
 
 			const result = await response.json() as { availableDates?: string[] };
@@ -183,7 +185,7 @@
 		mobileStep = 'times';
 
 		try {
-			const response = await fetch(`/api/availability?event=${data.slug}&date=${dateStr}`);
+			const response = await fetch(`/api/availability?event=${data.slug}&expert=${encodeURIComponent(selectedExpertId)}&date=${dateStr}`);
 			if (!response.ok) throw new Error('Failed to fetch availability');
 			const result = await response.json() as { slots?: Array<{ start: string; end: string }> };
 			availableSlots = result.slots || [];
@@ -197,6 +199,18 @@
 
 	function selectSlot(slot: { start: string; end: string }) {
 		selectedSlot = slot;
+	}
+
+	function selectExpert(expertId: string) {
+		if (expertId === selectedExpertId) return;
+		selectedExpertId = expertId;
+		selectedDate = null;
+		selectedSlot = null;
+		availableSlots = [];
+		availableDates = new Set();
+		showForm = false;
+		mobileStep = 'calendar';
+		fetchMonthAvailability();
 	}
 
 	function confirmSlot() {
@@ -227,6 +241,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					eventSlug: data.slug,
+					expertId: selectedExpertId,
 					startTime: selectedSlot?.start,
 					endTime: selectedSlot?.end,
 					attendeeName: bookingForm.name,
@@ -279,6 +294,32 @@
 		/>
 		<Footer class="mt-6" />
 	{:else}
+		{#if data.experts && data.experts.length > 1}
+			<section class="w-full max-w-5xl mb-4 rounded-xl bg-white p-5 shadow-sm md:mb-5" aria-labelledby="expert-selection-title">
+				<h2 id="expert-selection-title" class="text-lg font-semibold text-gray-900">Choose your expert</h2>
+				<p class="mt-1 text-sm text-gray-600">Select who you would like to meet. Their available times and calendar will be used for this booking.</p>
+				<div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each data.experts as expert}
+						<button
+							type="button"
+							onclick={() => selectExpert(expert.id)}
+							class="flex items-start gap-3 rounded-lg border p-3 text-left transition {selectedExpertId === expert.id ? 'border-blue-600 ring-2 ring-blue-100' : 'border-gray-200 hover:border-gray-400'}"
+						>
+							{#if expert.profileImage}
+								<img src={expert.profileImage} alt={expert.name} class="h-12 w-12 rounded-full object-cover" />
+							{:else}
+								<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-200 font-semibold text-gray-700">{expert.name.charAt(0)}</div>
+							{/if}
+							<span class="min-w-0">
+								<strong class="block truncate text-sm text-gray-900">{expert.name}</strong>
+								{#if expert.title}<span class="block truncate text-xs text-gray-500">{expert.title}</span>{/if}
+								{#if expert.specialties}<span class="mt-1 block line-clamp-2 text-xs text-gray-500">{expert.specialties}</span>{/if}
+							</span>
+						</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
 		<!-- MOBILE LAYOUT (< 768px) - Full white page -->
 		<div class="md:hidden min-h-screen w-full bg-white">
 			<!-- Cover Image with black line below -->

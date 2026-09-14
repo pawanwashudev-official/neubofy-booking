@@ -4,13 +4,13 @@
 
 import { redirect, fail, error } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { getCurrentUser } from '$lib/server/auth';
+import { getAuthContext, isOrganizationAdmin } from '$lib/server/auth';
 import { validateLength, validateFields, MAX_LENGTHS } from '$lib/server/validation';
 
 export const load: PageServerLoad = async (event) => {
-	const userId = await getCurrentUser(event);
+	const auth = await getAuthContext(event);
 
-	if (!userId) {
+	if (!auth) {
 		throw redirect(302, '/auth/login');
 	}
 
@@ -24,7 +24,7 @@ export const load: PageServerLoad = async (event) => {
 	// Get user info for calendar connection status and settings
 	const user = await db
 		.prepare('SELECT google_refresh_token, outlook_refresh_token, settings FROM users WHERE id = ?')
-		.bind(userId)
+		.bind(auth.userId)
 		.first<{ google_refresh_token: string | null; outlook_refresh_token: string | null; settings: string | null }>();
 
 	// Check if Microsoft OAuth is configured
@@ -47,9 +47,12 @@ export const load: PageServerLoad = async (event) => {
 			`SELECT id, name, slug, duration_minutes as duration, description, is_active, cover_image,
 				availability_calendars, invite_calendar
 			FROM event_types
-			WHERE id = ? AND user_id = ?`
+			WHERE id = ? AND organization_id = ? AND EXISTS (
+				SELECT 1 FROM event_type_hosts h
+				WHERE h.event_type_id = event_types.id AND h.user_id = ? AND h.is_active = 1
+			)`
 		)
-		.bind(eventTypeId, userId)
+		.bind(eventTypeId, auth.organizationId, auth.userId)
 		.first<{
 			id: string;
 			name: string;
@@ -66,8 +69,24 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, 'Event type not found');
 	}
 
+	const assignedExperts = await db.prepare(
+		`SELECT u.id, u.name, u.profile_image, u.public_title
+		 FROM event_type_hosts h JOIN users u ON u.id = h.user_id
+		 WHERE h.event_type_id = ? AND h.is_active = 1 ORDER BY u.name`
+	).bind(eventTypeId).all();
+	const organizationExperts = isOrganizationAdmin(auth.role)
+		? (await db.prepare(
+			`SELECT u.id, u.name, u.profile_image, u.public_title
+			 FROM organization_members om JOIN users u ON u.id = om.user_id
+			 WHERE om.organization_id = ? AND om.is_active = 1 AND u.is_active = 1 ORDER BY u.name`
+		).bind(auth.organizationId).all()).results
+		: [];
+
 	return {
 		eventType,
+		assignedExperts: assignedExperts.results,
+		organizationExperts,
+		canManageExperts: isOrganizationAdmin(auth.role),
 		googleConnected: !!user?.google_refresh_token,
 		outlookConnected: !!user?.outlook_refresh_token,
 		outlookConfigured,
@@ -78,9 +97,9 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	default: async (event) => {
-		const userId = await getCurrentUser(event);
+		const auth = await getAuthContext(event);
 
-		if (!userId) {
+		if (!auth) {
 			throw redirect(302, '/auth/login');
 		}
 
@@ -93,8 +112,13 @@ export const actions: Actions = {
 
 		// Verify ownership
 		const existing = await db
-			.prepare('SELECT id FROM event_types WHERE id = ? AND user_id = ?')
-			.bind(eventTypeId, userId)
+			.prepare(
+				`SELECT id FROM event_types
+				 WHERE id = ? AND organization_id = ? AND EXISTS (
+					SELECT 1 FROM event_type_hosts h WHERE h.event_type_id = event_types.id AND h.user_id = ? AND h.is_active = 1
+				 )`
+			)
+			.bind(eventTypeId, auth.organizationId, auth.userId)
 			.first();
 
 		if (!existing) {
@@ -102,6 +126,7 @@ export const actions: Actions = {
 		}
 
 		const formData = await event.request.formData();
+		const requestedExpertIds = formData.getAll('expert_ids').map(value => value.toString()).filter(Boolean);
 		const name = formData.get('name');
 		const slug = formData.get('slug');
 		const duration = formData.get('duration');
@@ -152,7 +177,7 @@ export const actions: Actions = {
 					`UPDATE event_types
 					SET name = ?, slug = ?, duration_minutes = ?, description = ?, is_active = ?, cover_image = ?,
 						availability_calendars = ?, invite_calendar = ?
-					WHERE id = ? AND user_id = ?`
+					WHERE id = ? AND organization_id = ?`
 				)
 				.bind(
 					name.toString(),
@@ -164,9 +189,24 @@ export const actions: Actions = {
 					availabilityCalendars ? availabilityCalendars.toString() : null,
 					inviteCalendar ? inviteCalendar.toString() : null,
 					eventTypeId,
-					userId
+					auth.organizationId
 				)
 				.run();
+
+			if (isOrganizationAdmin(auth.role) && requestedExpertIds.length > 0) {
+				const expertIds = new Set(requestedExpertIds);
+				const placeholders = Array.from(expertIds, () => '?').join(', ');
+				const validExperts = await db.prepare(
+					`SELECT user_id FROM organization_members WHERE organization_id = ? AND is_active = 1 AND user_id IN (${placeholders})`
+				).bind(auth.organizationId, ...expertIds).all<{ user_id: string }>();
+				if (validExperts.results.length !== expertIds.size) return fail(400, { error: 'Every selected expert must be an active organization member' });
+				await db.prepare('UPDATE event_type_hosts SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE event_type_id = ?').bind(eventTypeId).run();
+				await db.batch(Array.from(expertIds, expertId => db.prepare(
+					`INSERT INTO event_type_hosts (event_type_id, organization_id, user_id, is_active, updated_at)
+					 VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+					 ON CONFLICT(event_type_id, user_id) DO UPDATE SET is_active = 1, updated_at = CURRENT_TIMESTAMP`
+				).bind(eventTypeId, auth.organizationId, expertId)));
+			}
 
 			throw redirect(302, '/dashboard');
 		} catch (error: any) {

@@ -48,6 +48,24 @@ interface EmailConfig {
 	replyTo?: string;
 }
 
+function escapeHtml(value: string): string {
+	return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] || character);
+}
+
+function renderHtmlTemplate(template: string, data: BookingEmailData): string {
+	const values: Record<string, string> = {
+		event_name: data.eventName,
+		host_name: data.hostName,
+		attendee_name: data.attendeeName,
+		attendee_email: data.attendeeEmail,
+		date: new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: data.timezone }).format(data.startTime),
+		time: new Intl.DateTimeFormat('en-US', { timeStyle: 'short', timeZone: data.timezone }).format(data.startTime),
+		meeting_url: data.meetingUrl || '',
+		app_url: data.appUrl
+	};
+	return template.replace(/\{([a-z_]+)\}/g, (match, key: string) => key in values ? escapeHtml(values[key]) : match);
+}
+
 export async function getOrganizationEmailConfig(
 	db: D1Database,
 	userId: string,
@@ -72,7 +90,7 @@ export async function sendBookingEmail(
 	config: EmailConfig & { replyTo: string },
 	customSubject?: string
 ): Promise<void> {
-	const htmlBody = generateBookingEmail(data);
+	const htmlBody = data.htmlTemplate ? renderHtmlTemplate(data.htmlTemplate, data) : generateBookingEmail(data);
 	const textBody = generateBookingEmailText(data);
 	const subject = customSubject
 		? replaceSubjectVariables(customSubject, data)
@@ -113,7 +131,7 @@ export async function sendCancellationEmail(
 	config: EmailConfig & { replyTo: string },
 	customSubject?: string
 ): Promise<void> {
-	const htmlBody = generateCancellationEmail(data);
+	const htmlBody = data.htmlTemplate ? renderHtmlTemplate(data.htmlTemplate, data) : generateCancellationEmail(data);
 	const subject = customSubject
 		? replaceSubjectVariables(customSubject, data)
 		: `Meeting Cancelled: ${data.eventName}`;
@@ -152,7 +170,7 @@ export async function sendRescheduleEmail(
 	config: EmailConfig & { replyTo: string },
 	customSubject?: string
 ): Promise<void> {
-	const htmlBody = generateRescheduleEmail(data);
+	const htmlBody = data.htmlTemplate ? renderHtmlTemplate(data.htmlTemplate, data) : generateRescheduleEmail(data);
 	const subject = customSubject
 		? replaceSubjectVariables(customSubject, data)
 		: `Meeting Rescheduled: ${data.eventName} with ${data.hostName}`;
@@ -192,7 +210,7 @@ export async function sendReminderEmail(
 	config: EmailConfig & { replyTo: string },
 	customSubject?: string
 ): Promise<void> {
-	const htmlBody = generateReminderEmail(data, reminderType);
+	const htmlBody = data.htmlTemplate ? renderHtmlTemplate(data.htmlTemplate, data) : generateReminderEmail(data, reminderType);
 	const subject = customSubject
 		? replaceSubjectVariables(customSubject, data)
 		: getDefaultReminderSubject(data, reminderType);
@@ -337,7 +355,7 @@ export async function getEmailTemplates(
 ): Promise<Map<EmailTemplateType, EmailTemplate>> {
 	const templates = await db
 		.prepare(
-			`SELECT et.template_type, et.is_enabled, et.subject, et.custom_message
+				 `SELECT et.template_type, et.is_enabled, et.subject, et.custom_message, et.html_template
 			 FROM email_templates et
 			 JOIN organization_members om ON om.organization_id = et.organization_id AND om.user_id = ? AND om.is_active = 1
 			 WHERE et.organization_id = om.organization_id`
@@ -348,6 +366,7 @@ export async function getEmailTemplates(
 			is_enabled: number;
 			subject: string | null;
 			custom_message: string | null;
+			html_template: string | null;
 		}>();
 
 	const map = new Map<EmailTemplateType, EmailTemplate>();
@@ -356,7 +375,8 @@ export async function getEmailTemplates(
 			template_type: t.template_type,
 			is_enabled: t.is_enabled === 1,
 			subject: t.subject,
-			custom_message: t.custom_message
+							custom_message: t.custom_message,
+							html_template: t.html_template
 		});
 	}
 	return map;

@@ -18,6 +18,7 @@ export interface BookingEmailData {
 	hostContactEmail?: string;
 	appUrl: string;
 	customMessage?: string | null;
+	htmlTemplate?: string | null;
 	timeFormat?: '12h' | '24h';
 	timezone?: string;
 	brandColor?: string;
@@ -36,6 +37,7 @@ export interface EmailTemplate {
 	is_enabled: boolean;
 	subject: string | null;
 	custom_message: string | null;
+	html_template: string | null;
 }
 
 export interface EmailConfig {

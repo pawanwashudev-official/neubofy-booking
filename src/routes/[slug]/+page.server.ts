@@ -49,6 +49,28 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 
 		if (!eventType) throw error(404, 'Event type not found');
 
+		const experts = await db.prepare(
+			`SELECT u.id, u.name, u.profile_image, u.public_title, u.public_bio,
+				u.public_specialties, u.public_contact_email, u.public_mobile, u.public_social_handle,
+				u.public_profile_enabled
+			 FROM event_type_hosts h
+			 JOIN organization_members om ON om.organization_id = h.organization_id AND om.user_id = h.user_id AND om.is_active = 1
+			 JOIN users u ON u.id = h.user_id AND u.is_active = 1
+			 WHERE h.event_type_id = ? AND h.is_active = 1
+			 ORDER BY u.name`
+		).bind(eventType.id).all<{
+			id: string;
+			name: string;
+			profile_image: string | null;
+			public_title: string | null;
+			public_bio: string | null;
+			public_specialties: string | null;
+			public_contact_email: string | null;
+			public_mobile: string | null;
+			public_social_handle: string | null;
+			public_profile_enabled: number | null;
+		}>();
+
 		let hostSettings: { timeFormat?: string; defaultInviteCalendar?: string } = {};
 		try {
 			hostSettings = eventType.host_settings ? JSON.parse(eventType.host_settings) : {};
@@ -65,6 +87,17 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 		return {
 			slug: eventType.slug,
 			eventType: { ...eventType, invite_calendar: effectiveInviteCalendar },
+			experts: experts.results.map(expert => ({
+				id: expert.id,
+				name: expert.name,
+				profileImage: expert.profile_image,
+				title: expert.public_profile_enabled ? expert.public_title : null,
+				bio: expert.public_profile_enabled ? expert.public_bio : null,
+				specialties: expert.public_profile_enabled ? expert.public_specialties : null,
+				contactEmail: expert.public_profile_enabled ? expert.public_contact_email : null,
+				mobile: expert.public_profile_enabled ? expert.public_mobile : null,
+				socialHandle: expert.public_profile_enabled ? expert.public_social_handle : null
+			})),
 			user: {
 				name: organization.name,
 				profileImage: organization.profile_image,

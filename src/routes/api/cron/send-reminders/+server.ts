@@ -130,6 +130,7 @@ export const GET = async ({ url, platform }: RequestEvent) => {
 							hostContactEmail: email.contact_email || undefined,
 							appUrl: env.APP_URL || '',
 							customMessage: template?.custom_message,
+							htmlTemplate: template?.html_template,
 							timeFormat,
 							brandColor: email.brand_color || undefined
 						},
