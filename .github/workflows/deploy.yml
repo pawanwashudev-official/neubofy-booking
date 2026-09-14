@@ -1,6 +1,6 @@
 name: Deploy to Cloudflare
 
-on:
+"on":
   push:
     branches:
       - main
@@ -48,9 +48,9 @@ jobs:
     name: Detect Changed Components
     runs-on: ubuntu-latest
     outputs:
-      pages: ${{ steps.filter.outputs.pages == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'pages') }}
-      database: ${{ steps.filter.outputs.database == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'database') }}
-      cron_worker: ${{ steps.filter.outputs.cron_worker == 'true' || github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'all' || inputs.deploy_target == 'cron_worker') }}
+      pages: ${{ steps.components.outputs.pages }}
+      database: ${{ steps.components.outputs.database }}
+      cron_worker: ${{ steps.components.outputs.cron_worker }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -59,7 +59,7 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          filters:
+          filters: |
             pages:
               - 'src/**'
               - 'static/**'
@@ -82,6 +82,34 @@ jobs:
               - 'workers/**'
               - '.github/workflows/deploy.yml'
 
+      - name: Resolve Deploy Targets
+        id: components
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ inputs.deploy_target }}"
+            echo "Manual workflow dispatch for target: $TARGET"
+            if [ "$TARGET" = "all" ] || [ "$TARGET" = "pages" ]; then
+              echo "pages=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "pages=false" >> "$GITHUB_OUTPUT"
+            fi
+            if [ "$TARGET" = "all" ] || [ "$TARGET" = "database" ]; then
+              echo "database=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "database=false" >> "$GITHUB_OUTPUT"
+            fi
+            if [ "$TARGET" = "all" ] || [ "$TARGET" = "cron_worker" ]; then
+              echo "cron_worker=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "cron_worker=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "Auto push detection:"
+            echo "pages=${{ steps.filter.outputs.pages }}" >> "$GITHUB_OUTPUT"
+            echo "database=${{ steps.filter.outputs.database }}" >> "$GITHUB_OUTPUT"
+            echo "cron_worker=${{ steps.filter.outputs.cron_worker }}" >> "$GITHUB_OUTPUT"
+          fi
+
   # --------------------------------------------------------------------------
   # 2. DATABASE MIGRATION JOB
   # Runs ONLY when schema.sql or migrations/ have changed.
@@ -89,7 +117,7 @@ jobs:
   migrate-database:
     name: Apply Database Migrations
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.database == 'true' }}
+    if: needs.detect-changes.outputs.database == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -158,7 +186,7 @@ jobs:
   deploy-pages:
     name: Build & Deploy Pages
     needs: [detect-changes, migrate-database]
-    if: ${{ always() && !cancelled() && needs.detect-changes.outputs.pages == 'true' && (needs.migrate-database.result == 'success' || needs.migrate-database.result == 'skipped') }}
+    if: always() && !cancelled() && needs.detect-changes.outputs.pages == 'true' && contains(fromJSON('["success", "skipped"]'), needs.migrate-database.result)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -228,7 +256,7 @@ jobs:
   deploy-cron:
     name: Deploy Cron Worker
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.cron_worker == 'true' }}
+    if: needs.detect-changes.outputs.cron_worker == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
