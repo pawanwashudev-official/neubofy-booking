@@ -137,7 +137,8 @@ export const actions: Actions = {
 						db,
 						proposal.user_id,
 						env.GOOGLE_CLIENT_ID,
-						env.GOOGLE_CLIENT_SECRET
+						env.GOOGLE_CLIENT_SECRET,
+						env.JWT_SECRET
 					);
 					await cancelCalendarEvent(accessToken, proposal.google_event_id);
 				} catch (err) {
@@ -154,7 +155,8 @@ export const actions: Actions = {
 					db,
 					proposal.user_id,
 					env.GOOGLE_CLIENT_ID,
-					env.GOOGLE_CLIENT_SECRET
+					env.GOOGLE_CLIENT_SECRET,
+					env.JWT_SECRET
 				);
 
 				const calendarEvent = await createCalendarEvent(accessToken, {
@@ -313,7 +315,8 @@ export const actions: Actions = {
 						db,
 						proposal.user_id,
 						env.GOOGLE_CLIENT_ID,
-						env.GOOGLE_CLIENT_SECRET
+						env.GOOGLE_CLIENT_SECRET,
+						env.JWT_SECRET
 					);
 					await cancelCalendarEvent(accessToken, proposal.google_event_id);
 				} catch (err) {

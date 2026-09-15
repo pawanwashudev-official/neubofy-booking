@@ -36,7 +36,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			.prepare(
 				`SELECT id, user_id, duration_minutes as duration, availability_calendars 
 				 FROM event_types 
-				 WHERE slug = ? AND is_active = 1 LIMIT 1`
+				 WHERE slug = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0 LIMIT 1`
 			)
 			.bind(eventSlug)
 			.first<{ id: string; user_id: string | null; duration: number; availability_calendars: string | null }>();
@@ -182,7 +182,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 					db,
 					user.id,
 					env.GOOGLE_CLIENT_ID,
-					env.GOOGLE_CLIENT_SECRET
+					env.GOOGLE_CLIENT_SECRET,
+					env.JWT_SECRET
 				);
 				const googleBusy = await getBusyTimes(accessToken, firstDay, lastDay, userSettings.selectedGoogleCalendars);
 				busySlots.push(...googleBusy);
@@ -195,7 +196,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 					db,
 					user.id,
 					env.MICROSOFT_CLIENT_ID,
-					env.MICROSOFT_CLIENT_SECRET
+					env.MICROSOFT_CLIENT_SECRET,
+					env.JWT_SECRET
 				);
 				const outlookBusy = await getOutlookBusyTimes(outlookToken, firstDay, lastDay);
 				busySlots.push(...outlookBusy);
@@ -211,7 +213,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			.prepare(
 				`SELECT start_time, end_time
 				 FROM bookings
-				 WHERE user_id = ? AND start_time >= ? AND start_time < ? AND status = 'confirmed'
+				 WHERE user_id = ? AND start_time >= ? AND start_time < ? AND status = 'confirmed' AND COALESCE(is_deleted, 0) = 0
 				 ORDER BY start_time`
 			)
 			.bind(user.id, monthStartIso, nextMonthIso)

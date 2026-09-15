@@ -31,35 +31,18 @@ export const load: PageServerLoad = async (event) => {
 				        et.category, et.is_active, et.is_free_only, et.color, et.durations_json,
 				        count(b.id) as booking_count
 				 FROM event_types et
-				 LEFT JOIN bookings b ON b.event_type_id = et.id
-				 WHERE et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main' OR et.user_id = ?
+				 LEFT JOIN bookings b ON b.event_type_id = et.id AND COALESCE(b.is_deleted, 0) = 0
+				 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main' OR et.user_id = ?)
+				   AND COALESCE(et.is_deleted, 0) = 0
 				 GROUP BY et.id
 				 ORDER BY et.created_at ASC`
 			)
 			.bind(auth.organizationId || 'org_neubofy_main', auth.userId)
 			.all();
 		eventTypesResults = res.results || [];
-	} catch {
-		try {
-			const res = await db
-				.prepare(
-					`SELECT et.id, et.user_id, et.organization_id, et.name, et.slug, et.duration_minutes, et.description,
-					        et.is_active, et.color, count(b.id) as booking_count
-					 FROM event_types et
-					 LEFT JOIN bookings b ON b.event_type_id = et.id
-					 GROUP BY et.id
-					 ORDER BY et.created_at ASC`
-				)
-				.all();
-			eventTypesResults = (res.results || []).map((et: any) => ({
-				...et,
-				category: 'Consultation',
-				is_free_only: 1,
-				durations_json: `[${et.duration_minutes || 30}]`
-			}));
-		} catch (e) {
-			console.error('Failed to load event types list:', e);
-		}
+	} catch (err) {
+		console.error('Failed to load event types list:', err);
+		eventTypesResults = [];
 	}
 
 	// Fetch detailed assigned specialists per service

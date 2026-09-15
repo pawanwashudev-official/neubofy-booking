@@ -258,7 +258,8 @@ export async function getValidAccessToken(
 	db: D1Database,
 	userId: string,
 	clientId: string,
-	clientSecret: string
+	clientSecret: string,
+	encryptionSecret?: string
 ): Promise<string> {
 	// Get user's tokens from database
 	const user = await db
@@ -272,9 +273,17 @@ export async function getValidAccessToken(
 		throw new Error('User not connected to Google Calendar');
 	}
 
+	const { decryptToken } = await import('./encryption.js');
+	const candidateSecrets = [encryptionSecret, clientSecret].filter((s): s is string => !!s);
+	const decryptedRefreshToken = await decryptToken(user.google_refresh_token, candidateSecrets);
+
+	if (!decryptedRefreshToken) {
+		throw new Error('Failed to decrypt Google refresh token');
+	}
+
 	// Refresh access token to get a fresh one
 	const { refreshAccessToken } = await import('./auth.js');
-	const tokens = await refreshAccessToken(user.google_refresh_token, clientId, clientSecret);
+	const tokens = await refreshAccessToken(decryptedRefreshToken, clientId, clientSecret);
 
 	return tokens.access_token;
 }

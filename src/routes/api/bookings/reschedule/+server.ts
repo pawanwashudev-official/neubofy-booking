@@ -7,6 +7,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createCalendarEvent, cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
 import { sendRescheduleEmail, sendAdminRescheduleNotification, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
+import { verifyVerificationToken } from '$lib/server/email-verification';
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const env = platform?.env;
@@ -20,12 +21,18 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			newStartTime: string;
 			newEndTime: string;
 			timezone?: string;
+			email?: string;
+			verificationToken?: string;
 		};
-		const { bookingId, newStartTime, newEndTime, timezone } = body;
+		const { bookingId, newStartTime, newEndTime, timezone, email, verificationToken } = body;
 
 		// Validate required fields
 		if (!bookingId || !newStartTime || !newEndTime) {
 			throw error(400, 'Missing required fields');
+		}
+
+		if (!email || !verificationToken) {
+			throw error(400, 'Email identity verification is required to reschedule this consultation.');
 		}
 
 		const db = env.DB;
@@ -42,7 +49,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				FROM bookings b
 				JOIN event_types e ON b.event_type_id = e.id
 				JOIN users u ON b.user_id = u.id
-				WHERE b.id = ? AND b.status IN ('confirmed', 'rescheduled')`
+				WHERE b.id = ? AND b.status IN ('confirmed', 'rescheduled') AND COALESCE(b.is_deleted, 0) = 0`
 			)
 			.bind(bookingId)
 			.first<{
@@ -69,6 +76,24 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		if (!originalBooking) {
 			throw error(404, 'Booking not found or already cancelled');
+		}
+
+		// Verify email matches booking attendee_email
+		if (email.trim().toLowerCase() !== originalBooking.attendee_email.toLowerCase()) {
+			throw error(403, 'Email address entered does not match the consultation record.');
+		}
+
+		const secret = env.JWT_SECRET;
+		if (!secret) {
+			throw error(500, 'Server configuration error: JWT_SECRET is missing');
+		}
+
+		const tokenCheck = await verifyVerificationToken(verificationToken, secret, originalBooking.attendee_email, 'reschedule');
+		if (!tokenCheck.valid) {
+			const fallbackCheck = await verifyVerificationToken(verificationToken, secret, originalBooking.attendee_email);
+			if (!fallbackCheck.valid) {
+				throw error(403, 'Invalid or expired verification session. Please verify your email again.');
+			}
 		}
 
 		const newStartDateTime = new Date(newStartTime);
@@ -109,7 +134,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				db,
 				originalBooking.user_id,
 				env.GOOGLE_CLIENT_ID,
-				env.GOOGLE_CLIENT_SECRET
+				env.GOOGLE_CLIENT_SECRET,
+				env.JWT_SECRET
 			);
 
 			// Cancel old calendar event if it exists

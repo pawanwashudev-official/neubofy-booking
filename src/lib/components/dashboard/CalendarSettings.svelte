@@ -117,6 +117,19 @@
 			error = 'Failed to disconnect Outlook';
 		}
 	}
+
+	async function disconnectGoogle() {
+		if (!confirm('Are you sure you want to disconnect Google Calendar integration?')) return;
+		try {
+			const form = document.createElement('form');
+			form.method = 'POST';
+			form.action = '/auth/google/disconnect';
+			document.body.appendChild(form);
+			form.submit();
+		} catch (err) {
+			error = 'Failed to disconnect Google Calendar';
+		}
+	}
 </script>
 
 <div class="space-y-6 text-zinc-100">
@@ -165,12 +178,23 @@
 				</div>
 			</div>
 
-			<a
-				href="/auth/google-calendar"
-				class="btn-electric px-5 py-2.5 rounded-xl text-xs font-bold shrink-0 text-center"
-			>
-				{user?.googleConnected ? 'Re-link Google Account' : 'Connect Google Calendar →'}
-			</a>
+			<div class="flex items-center gap-2 shrink-0">
+				{#if user?.googleConnected}
+					<button
+						type="button"
+						onclick={disconnectGoogle}
+						class="px-3.5 py-2.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl border border-red-500/20 transition"
+					>
+						Disconnect
+					</button>
+				{/if}
+				<a
+					href="/auth/google-calendar"
+					class="btn-electric px-5 py-2.5 rounded-xl text-xs font-bold shrink-0 text-center"
+				>
+					{user?.googleConnected ? 'Re-link' : 'Connect Google Calendar →'}
+				</a>
+			</div>
 		</div>
 
 		<!-- Outlook Calendar Connection Card -->

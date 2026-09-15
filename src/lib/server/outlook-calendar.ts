@@ -247,7 +247,8 @@ export async function getValidOutlookAccessToken(
 	db: D1Database,
 	userId: string,
 	clientId: string,
-	clientSecret: string
+	clientSecret: string,
+	encryptionSecret?: string
 ): Promise<string> {
 	// Get user's Outlook refresh token from database
 	const user = await db
@@ -261,18 +262,27 @@ export async function getValidOutlookAccessToken(
 		throw new Error('User not connected to Outlook Calendar');
 	}
 
+	const { decryptToken, encryptToken } = await import('./encryption.js');
+	const candidateSecrets = [encryptionSecret, clientSecret].filter((s): s is string => !!s);
+	const decryptedRefreshToken = await decryptToken(user.outlook_refresh_token, candidateSecrets);
+
+	if (!decryptedRefreshToken) {
+		throw new Error('Failed to decrypt Outlook refresh token');
+	}
+
 	// Refresh access token to get a fresh one
 	const tokens = await refreshOutlookAccessToken(
-		user.outlook_refresh_token,
+		decryptedRefreshToken,
 		clientId,
 		clientSecret
 	);
 
-	// If Microsoft returned a new refresh token, update it in the database
-	if (tokens.refresh_token && tokens.refresh_token !== user.outlook_refresh_token) {
+	// If Microsoft returned a new refresh token, update it in the database (encrypted)
+	if (tokens.refresh_token && tokens.refresh_token !== decryptedRefreshToken) {
+		const encryptedNewToken = await encryptToken(tokens.refresh_token, candidateSecrets[0]);
 		await db
 			.prepare('UPDATE users SET outlook_refresh_token = ? WHERE id = ?')
-			.bind(tokens.refresh_token, userId)
+			.bind(encryptedNewToken, userId)
 			.run();
 	}
 

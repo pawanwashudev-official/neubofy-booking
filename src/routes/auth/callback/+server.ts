@@ -5,6 +5,7 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { exchangeCodeForTokens, getGoogleUserInfo, createSessionToken } from '$lib/server/auth';
+import { encryptToken } from '$lib/server/encryption';
 
 export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 	const env = platform?.env;
@@ -57,8 +58,9 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			const userId = storedState.slice('calendar:'.length);
 			const member = await db.prepare('SELECT id FROM organization_members WHERE user_id = ? AND is_active = 1 LIMIT 1').bind(userId).first();
 			if (!member) throw error(403, 'Your account is not active in an organization.');
-			await db.prepare('UPDATE users SET google_refresh_token = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?')
-				.bind(tokens.refresh_token || null, userId).run();
+			const encryptedToken = tokens.refresh_token ? await encryptToken(tokens.refresh_token, env.JWT_SECRET) : null;
+			await db.prepare('UPDATE users SET google_refresh_token = COALESCE(?, google_refresh_token), google_calendar_connected = 1, last_login_at = CURRENT_TIMESTAMP WHERE id = ?')
+				.bind(encryptedToken, userId).run();
 			throw redirect(302, '/dashboard/calendars?success=google_connected');
 		}
 
@@ -87,17 +89,19 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			const userId = crypto.randomUUID();
 			const slug = `${normalizedEmail.split('@')[0].replace(/[^a-z0-9]/g, '') || 'user'}-${userId.slice(0, 8)}`;
 
+			const encryptedToken = tokens.refresh_token ? await encryptToken(tokens.refresh_token, env.JWT_SECRET) : null;
+
 			await db
 				.prepare(
-					`INSERT INTO users (id, email, name, slug, google_refresh_token, is_active, last_login_at, created_at)
-					VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+					`INSERT INTO users (id, email, name, slug, google_refresh_token, google_calendar_connected, is_active, last_login_at, created_at)
+					VALUES (?, ?, ?, ?, ?, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 				)
 				.bind(
 					userId,
 					normalizedEmail,
 					userInfo.name,
 					slug,
-					tokens.refresh_token || null
+					encryptedToken
 				)
 				.run();
 
@@ -139,23 +143,25 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 				} catch {}
 			}
 
-			// Auto-heal membership if missing
-			if (!membership) {
+			// If existing user has no active membership, only the verified organization owner can be auto-assigned
+			if (!membership && ownerEmail && normalizedEmail === ownerEmail) {
 				try {
 					const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
 					if (org) {
-						await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
-							.bind(org.id, user.id, normalizedEmail === ownerEmail ? 'owner' : 'admin').run();
-						membership = { id: 'auto_healed' };
+						await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, "owner", 1)')
+							.bind(org.id, user.id).run();
+						membership = { id: 'owner_healed' };
 					}
-				} catch (eHeal) {
-					console.error('Auto-heal membership error:', eHeal);
+				} catch (eOwner) {
+					console.error('Owner membership assignment error:', eOwner);
 				}
 			}
 
-			if (!membership && (!ownerEmail || normalizedEmail !== ownerEmail)) {
+			if (!membership) {
 				throw error(403, 'You do not have an active organization membership.');
 			}
+
+			const encryptedToken = tokens.refresh_token ? await encryptToken(tokens.refresh_token, env.JWT_SECRET) : null;
 
 			await db
 				.prepare(
@@ -167,7 +173,7 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 					WHERE id = ?`
 				)
 				.bind(
-					tokens.refresh_token || null,
+					encryptedToken,
 					normalizedEmail,
 					userInfo.name,
 					user.id

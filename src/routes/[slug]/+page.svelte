@@ -2,13 +2,11 @@
 	import { browser } from '$app/environment';
 	import type { PageData } from './$types';
 	import TimezoneSelector from '$lib/components/TimezoneSelector.svelte';
-	import CountryCodeSelector from '$lib/components/booking/CountryCodeSelector.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import { createBrandColors } from '$lib/utils/colorUtils';
 	import { detectTimezone, getTimezoneLabel, getTimezoneWithTime, TIMEZONE_LABELS } from '$lib/constants/timezones';
 	import { formatDateLocal, formatSelectedDate, createFormatters } from '$lib/utils/dateFormatters';
 	import { BookingCalendar, TimeSlotList, BookingForm, BookingSuccess, EventSidebar } from '$lib/components/booking';
-	import { type CountryInfo } from '$lib/constants/countries';
 
 	let { data }: { data: PageData } = $props();
 
@@ -55,16 +53,9 @@
 		phone: '',
 		countryCode: '+91',
 		notes: '',
-		couponCode: ''
+		couponCode: '',
+		verificationToken: ''
 	});
-	let mobileCountryFlag = $state('🇮🇳');
-	let showMobileCountryModal = $state(false);
-	let mobileCouponValidating = $state(false);
-	let mobileCouponMessage = $state('');
-	let mobileCouponError = $state('');
-	let mobileDiscountAmount = $state(0);
-	let mobileFinalPrice = $state(data.eventType?.is_free_only ? 0 : (data.eventType?.price_inr || 0));
-	let mobileIsComplimentary = $state(data.eventType?.is_free_only || (data.eventType?.price_inr || 0) === 0);
 
 	let bookingStatus = $state<'idle' | 'submitting' | 'success' | 'error'>('idle');
 	let bookingError = $state('');
@@ -254,49 +245,16 @@
 		}
 	}
 
-	async function handleApplyMobileCoupon() {
-		if (!bookingForm.couponCode?.trim()) {
-			mobileCouponError = 'Please enter a coupon code.';
-			return;
-		}
-
-		mobileCouponValidating = true;
-		mobileCouponMessage = '';
-		mobileCouponError = '';
-
-		try {
-			const res = await fetch('/api/coupons/validate', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					code: bookingForm.couponCode.trim(),
-					eventSlug: data.slug
-				})
-			});
-
-			const json = (await res.json()) as any;
-			if (!res.ok) {
-				throw new Error(json.message || 'Invalid coupon code.');
-			}
-
-			mobileCouponMessage = json.message;
-			mobileDiscountAmount = json.discountAmount || 0;
-			mobileFinalPrice = json.finalPrice || 0;
-			mobileIsComplimentary = json.isComplimentary;
-		} catch (err: any) {
-			mobileCouponError = err.message || 'Coupon verification failed.';
-			mobileDiscountAmount = 0;
-			mobileFinalPrice = data.eventType?.is_free_only ? 0 : (data.eventType?.price_inr || 0);
-			mobileIsComplimentary = data.eventType?.is_free_only || (data.eventType?.price_inr || 0) === 0;
-		} finally {
-			mobileCouponValidating = false;
-		}
-	}
-
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		bookingStatus = 'submitting';
 		bookingError = '';
+
+		if (!bookingForm.verificationToken) {
+			bookingError = 'Please verify your email address with the 6-digit OTP code before scheduling.';
+			bookingStatus = 'error';
+			return;
+		}
 
 		const fullPhone = bookingForm.phone?.trim()
 			? `${bookingForm.countryCode || '+91'} ${bookingForm.phone.trim()}`
@@ -316,16 +274,28 @@
 					attendeePhone: fullPhone,
 					notes: bookingForm.notes,
 					couponCode: bookingForm.couponCode,
-					timezone: selectedTimezone
+					timezone: selectedTimezone,
+					verificationToken: bookingForm.verificationToken
 				})
 			});
 
 			if (!response.ok) {
-				const errData = await response.json() as { message?: string };
+				const errData = (await response.json()) as { message?: string };
 				throw new Error(errData.message || 'Failed to create booking');
 			}
 
-			const result = await response.json() as { meetingUrl?: string; meetingType?: 'google_meet' | 'teams' };
+			const result = (await response.json()) as {
+				meetingUrl?: string;
+				meetingType?: 'google_meet' | 'teams';
+				requiresPayment?: boolean;
+				paymentUrl?: string;
+			};
+
+			if (result.requiresPayment && result.paymentUrl) {
+				window.location.href = result.paymentUrl;
+				return;
+			}
+
 			meetingUrl = result.meetingUrl || null;
 			meetingType = result.meetingType || 'google_meet';
 			bookingStatus = 'success';
@@ -655,151 +625,21 @@
 			<!-- Mobile Booking Form -->
 			{#if mobileStep === 'form'}
 				<div class="px-6 pb-8">
-					{#if bookingError}
-						<div class="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 mb-4 text-sm">
-							{bookingError}
-						</div>
-					{/if}
-					<div class="flex items-center justify-between mb-2">
-						<h2 class="text-lg font-semibold text-white">Enter Details</h2>
-						{#if mobileIsComplimentary}
-							<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-								🎁 Complimentary
-							</span>
-						{:else}
-							<span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-blue-500/15 text-blue-400 border border-blue-500/30">
-								₹{mobileFinalPrice}
-							</span>
-						{/if}
-					</div>
-					<p class="text-sm text-zinc-400 mb-6">
+					<p class="text-sm text-zinc-400 mb-6 text-center">
 						{selectedDate ? formatShortDate(selectedDate) : ''}{selectedSlot ? ` at ${formatTime(selectedSlot.start)}` : ''}
 					</p>
-					<form onsubmit={handleSubmit} class="space-y-4">
-						<div>
-							<label for="mobile-name" class="block text-sm font-medium text-zinc-300 mb-1.5">Full Name *</label>
-							<input
-								type="text"
-								id="mobile-name"
-								bind:value={bookingForm.name}
-								required
-								placeholder="Your Name"
-								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm transition"
-							/>
-						</div>
-						<div>
-							<label for="mobile-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email Address *</label>
-							<input
-								type="email"
-								id="mobile-email"
-								bind:value={bookingForm.email}
-								required
-								placeholder="you@company.com"
-								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm transition"
-							/>
-						</div>
-
-						<!-- Mobile Phone with Country Code -->
-						<div>
-							<label for="mobile-phone" class="block text-sm font-medium text-zinc-300 mb-1.5">
-								Mobile / WhatsApp (Optional)
-							</label>
-							<div class="flex rounded-xl bg-white/5 border border-white/10 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition">
-								<button
-									type="button"
-									onclick={() => (showMobileCountryModal = true)}
-									class="px-3 py-3 bg-white/[0.04] hover:bg-white/10 border-r border-white/10 flex items-center gap-1.5 text-xs text-zinc-200 transition-colors shrink-0"
-								>
-									<span>{mobileCountryFlag}</span>
-									<span class="font-mono text-xs">{bookingForm.countryCode || '+91'}</span>
-									<span class="text-[10px] text-zinc-500">▾</span>
-								</button>
-								<input
-									type="tel"
-									id="mobile-phone"
-									bind:value={bookingForm.phone}
-									placeholder="98765 43210"
-									class="flex-1 px-3 py-3 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none"
-								/>
-							</div>
-						</div>
-
-						<!-- Mobile Coupon Code -->
-						<div class="pt-1">
-							<label for="mobile-coupon" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
-								Have a Coupon or Referral Code?
-							</label>
-							<div class="flex gap-2">
-								<input
-									type="text"
-									id="mobile-coupon"
-									bind:value={bookingForm.couponCode}
-									placeholder="e.g. VIP100"
-									class="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-mono uppercase text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-								/>
-								<button
-									type="button"
-									onclick={handleApplyMobileCoupon}
-									disabled={mobileCouponValidating || !bookingForm.couponCode?.trim()}
-									class="px-3.5 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-white border border-white/10 disabled:opacity-40"
-								>
-									{mobileCouponValidating ? '...' : 'Apply'}
-								</button>
-							</div>
-							{#if mobileCouponMessage}
-								<p class="text-xs text-emerald-400 mt-1">{mobileCouponMessage}</p>
-							{/if}
-							{#if mobileCouponError}
-								<p class="text-xs text-red-400 mt-1">✕ {mobileCouponError}</p>
-							{/if}
-						</div>
-
-						<div>
-							<label for="mobile-notes" class="block text-sm font-medium text-zinc-300 mb-1.5">
-								Additional notes
-							</label>
-							<textarea
-								id="mobile-notes"
-								bind:value={bookingForm.notes}
-								rows="3"
-								placeholder="Describe your project or questions..."
-								class="w-full px-4 py-3 border border-white/10 bg-white/5 text-white placeholder-zinc-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-sm transition"
-							></textarea>
-						</div>
-
-						{#if !mobileIsComplimentary}
-							<div class="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-zinc-300 flex items-center justify-between">
-								<span>Payable Fee:</span>
-								<div class="text-right">
-									{#if mobileDiscountAmount > 0}
-										<span class="line-through text-zinc-500 mr-1.5">₹{data.eventType?.price_inr}</span>
-									{/if}
-									<span class="font-bold text-white text-sm font-mono">₹{mobileFinalPrice}</span>
-								</div>
-							</div>
-						{/if}
-
-						<button
-							type="submit"
-							disabled={bookingStatus === 'submitting'}
-							class="w-full text-white py-3 px-6 rounded-xl font-semibold transition disabled:opacity-50 shadow-lg shadow-blue-500/20"
-							style="background-color: var(--brand-color, #2563eb)"
-						>
-							{bookingStatus === 'submitting' ? 'Scheduling...' : 'Schedule Event'}
-						</button>
-					</form>
+					<BookingForm
+						bind:bookingForm
+						eventSlug={data.slug}
+						isFreeOnly={data.eventType?.is_free_only}
+						basePriceInr={data.eventType?.price_inr || 0}
+						{bookingStatus}
+						{bookingError}
+						{brandColor}
+						brandDark={colors.dark}
+						onSubmit={handleSubmit}
+					/>
 				</div>
-			{/if}
-
-			{#if showMobileCountryModal}
-				<CountryCodeSelector
-					selectedDialCode={bookingForm.countryCode || '+91'}
-					onSelect={(c) => {
-						bookingForm.countryCode = c.dialCode;
-						mobileCountryFlag = c.flag;
-					}}
-					onClose={() => (showMobileCountryModal = false)}
-				/>
 			{/if}
 
 			<!-- Mobile Footer -->

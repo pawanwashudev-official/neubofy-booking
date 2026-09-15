@@ -119,8 +119,82 @@
 		selectedSlot = slot;
 	}
 
+	// Email Verification State
+	let enteredEmail = $state('');
+	let otpCode = $state('');
+	let otpSent = $state(false);
+	let sendingOtp = $state(false);
+	let verifyingOtp = $state(false);
+	let isVerified = $state(false);
+	let verificationToken = $state('');
+	let otpError = $state('');
+	let otpSuccess = $state('');
+
+	async function handleSendOtp() {
+		if (!enteredEmail || !enteredEmail.includes('@')) {
+			otpError = 'Please enter a valid email address.';
+			return;
+		}
+		otpError = '';
+		otpSuccess = '';
+		sendingOtp = true;
+
+		try {
+			const res = await fetch('/api/otp/send', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: enteredEmail, purpose: 'reschedule' })
+			});
+			const result = await res.json() as { success?: boolean; message?: string };
+			if (!res.ok) {
+				otpError = result.message || 'Failed to send verification code.';
+			} else {
+				otpSent = true;
+				otpSuccess = 'Verification code sent to your email!';
+			}
+		} catch (err) {
+			otpError = 'Network error while sending verification code.';
+		} finally {
+			sendingOtp = false;
+		}
+	}
+
+	async function handleVerifyOtp() {
+		if (!otpCode || otpCode.trim().length !== 6) {
+			otpError = 'Please enter the 6-digit verification code.';
+			return;
+		}
+		otpError = '';
+		otpSuccess = '';
+		verifyingOtp = true;
+
+		try {
+			const res = await fetch('/api/otp/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: enteredEmail, code: otpCode.trim(), purpose: 'reschedule' })
+			});
+			const result = await res.json() as { success?: boolean; verifiedToken?: string; message?: string };
+			if (!res.ok || !result.verifiedToken) {
+				otpError = result.message || 'Invalid or expired code.';
+			} else {
+				verificationToken = result.verifiedToken;
+				isVerified = true;
+				otpSuccess = 'Email verified successfully!';
+			}
+		} catch (err) {
+			otpError = 'Network error while verifying code.';
+		} finally {
+			verifyingOtp = false;
+		}
+	}
+
 	async function handleReschedule() {
 		if (!selectedSlot) return;
+		if (!isVerified || !verificationToken) {
+			rescheduleError = 'Please verify your email address before confirming reschedule.';
+			return;
+		}
 
 		rescheduleStatus = 'submitting';
 		rescheduleError = '';
@@ -133,7 +207,9 @@
 					bookingId: data.booking.id,
 					newStartTime: selectedSlot.start,
 					newEndTime: selectedSlot.end,
-					timezone: selectedTimezone
+					timezone: selectedTimezone,
+					email: enteredEmail,
+					verificationToken
 				})
 			});
 
@@ -346,13 +422,99 @@
 					{/if}
 				</div>
 
-				<!-- Reschedule button -->
+				<!-- Reschedule button & verification gate -->
 				{#if selectedSlot}
-					<div class="mt-6 pt-6 border-t border-white/10">
+					<div class="mt-6 pt-6 border-t border-white/10 space-y-4">
+						<!-- Identity Verification Step -->
+						<div class="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+							<div class="flex items-center justify-between">
+								<h4 class="text-xs font-bold uppercase tracking-wider text-zinc-300">
+									Step: Verify Attendee Email
+								</h4>
+								{#if isVerified}
+									<span class="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">
+										✓ Verified
+									</span>
+								{/if}
+							</div>
+
+							<p class="text-xs text-zinc-400">
+								Please verify the email used for this booking ({data.booking.maskedEmail}) to confirm reschedule:
+							</p>
+
+							{#if !isVerified}
+								<div class="space-y-2">
+									<div class="flex gap-2">
+										<input
+											type="email"
+											bind:value={enteredEmail}
+											disabled={otpSent}
+											placeholder="Enter your full email"
+											class="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+										/>
+										{#if !otpSent}
+											<button
+												type="button"
+												onclick={handleSendOtp}
+												disabled={sendingOtp}
+												class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+											>
+												{sendingOtp ? 'Sending...' : 'Send OTP'}
+											</button>
+										{:else}
+											<button
+												type="button"
+												onclick={() => { otpSent = false; otpCode = ''; }}
+												class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold"
+											>
+												Change
+											</button>
+										{/if}
+									</div>
+
+									{#if otpSent}
+										<div class="flex gap-2 animate-fade-in">
+											<input
+												type="text"
+												maxlength="6"
+												bind:value={otpCode}
+												placeholder="6-digit code"
+												class="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-blue-500/50 text-xs font-mono tracking-widest text-center text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+											/>
+											<button
+												type="button"
+												onclick={handleVerifyOtp}
+												disabled={verifyingOtp}
+												class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+											>
+												{verifyingOtp ? 'Verifying...' : 'Verify'}
+											</button>
+										</div>
+									{/if}
+
+									{#if otpError}
+										<div class="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
+											{otpError}
+										</div>
+									{/if}
+									{#if otpSuccess}
+										<div class="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
+											{otpSuccess}
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<div class="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center justify-between">
+									<span>Identity confirmed for <strong>{enteredEmail}</strong></span>
+									<span class="text-xs font-bold">✓ Ready</span>
+								</div>
+							{/if}
+						</div>
+
 						<button
 							onclick={handleReschedule}
-							disabled={rescheduleStatus === 'submitting'}
-							class="w-full py-3 px-6 text-white rounded-xl font-semibold transition disabled:opacity-50 shadow-lg shadow-blue-500/20 hover:opacity-95"
+							disabled={rescheduleStatus === 'submitting' || !isVerified}
+							class="w-full py-3 px-6 text-white rounded-xl font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 hover:opacity-95"
 							style="background-color: var(--brand-color, #2563eb)"
 						>
 							{rescheduleStatus === 'submitting' ? 'Rescheduling...' : 'Confirm Reschedule'}

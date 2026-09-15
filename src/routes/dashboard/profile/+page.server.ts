@@ -21,26 +21,22 @@ export const load: PageServerLoad = async (event) => {
 			.prepare(
 				`SELECT id, name, email, slug, profile_image, brand_color, contact_email,
 				        role_title, bio, phone, session_pricing, is_free_consultation,
-				        google_refresh_token, outlook_refresh_token, timezone
-				 FROM users WHERE id = ?`
+				        google_refresh_token, outlook_refresh_token,
+				        google_calendar_connected, outlook_calendar_connected, timezone
+				 FROM users WHERE id = ? AND COALESCE(is_deleted, 0) = 0`
 			)
 			.bind(userId)
 			.first();
-	} catch (e1) {
-		try {
-			profile = await db
-				.prepare('SELECT id, name, email, slug, profile_image, brand_color, contact_email, google_refresh_token, timezone FROM users WHERE id = ?')
-				.bind(userId)
-				.first();
-		} catch (e2) {
-			console.error('Failed to query user in profile page:', e2);
-		}
+	} catch (err) {
+		console.error('Failed to query user in profile page:', err);
 	}
 
 	let parsedPricing = [];
 	try {
 		parsedPricing = profile?.session_pricing ? JSON.parse(profile.session_pricing) : [];
-	} catch {}
+	} catch (e) {
+		console.warn('Failed to parse user session_pricing JSON:', e);
+	}
 
 	if (!parsedPricing || parsedPricing.length === 0) {
 		parsedPricing = [
@@ -54,7 +50,8 @@ export const load: PageServerLoad = async (event) => {
 			? {
 					...profile,
 					session_pricing: parsedPricing,
-					googleConnected: !!profile.google_refresh_token
+					googleConnected: !!profile.google_calendar_connected && !!profile.google_refresh_token,
+					outlookConnected: !!profile.outlook_calendar_connected && !!profile.outlook_refresh_token
 				}
 			: null
 	};

@@ -226,6 +226,16 @@
 							<span>✉️</span>
 							<span>Email Templates</span>
 						</a>
+
+						<a
+							href="/dashboard/recycle-bin"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/recycle-bin')
+								? 'bg-amber-600 text-white shadow-[0_0_16px_rgba(245,158,11,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>🗑️</span>
+							<span>Recycle Bin</span>
+						</a>
 					</nav>
 				</div>
 

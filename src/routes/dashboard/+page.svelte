@@ -1,11 +1,26 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { goto } from '$app/navigation';
+	import { page as pageStore } from '$app/stores';
 
 	let { data }: { data: PageData } = $props();
 
-	// Reactive bookings
+	// Reactive bookings synced with data
 	let bookings = $state<any[]>(data.recentBookings || []);
+	$effect(() => {
+		bookings = data.recentBookings || [];
+	});
+
 	let filterStatus = $state<'upcoming' | 'completed' | 'canceled' | 'all'>('upcoming');
+
+	function navigateToPage(newPage: number, newPageSize?: number) {
+		const url = new URL($pageStore.url);
+		url.searchParams.set('page', Math.max(1, newPage).toString());
+		if (newPageSize) {
+			url.searchParams.set('pageSize', newPageSize.toString());
+		}
+		goto(url.toString(), { keepFocus: true, noScroll: true });
+	}
 
 	// Active intake modal
 	let activeIntakeBooking = $state<any | null>(null);
@@ -267,6 +282,56 @@
 			<p class="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
 				There are no {filterStatus} appointments matching this filter.
 			</p>
+		</div>
+	{/if}
+
+	<!-- Pagination Controls -->
+	{#if data.pagination && data.pagination.totalCount > 0}
+		<div class="glass-card rounded-2xl p-4 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-400">
+			<div class="flex flex-wrap items-center gap-2">
+				<span>
+					Showing <strong class="text-white">{(data.pagination.page - 1) * data.pagination.pageSize + 1}</strong>
+					to <strong class="text-white">{Math.min(data.pagination.page * data.pagination.pageSize, data.pagination.totalCount)}</strong>
+					of <strong class="text-white">{data.pagination.totalCount}</strong> consultations
+				</span>
+				<div class="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-3">
+					<label for="page-size-select" class="text-zinc-500">Per page:</label>
+					<select
+						id="page-size-select"
+						value={data.pagination.pageSize}
+						onchange={(e) => navigateToPage(1, parseInt(e.currentTarget.value, 10))}
+						class="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+					>
+						<option value={10} class="bg-[#121216] text-white">10</option>
+						<option value={25} class="bg-[#121216] text-white">25</option>
+						<option value={50} class="bg-[#121216] text-white">50</option>
+					</select>
+				</div>
+			</div>
+
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					disabled={data.pagination.page <= 1}
+					onclick={() => navigateToPage(data.pagination.page - 1)}
+					class="px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+				>
+					&larr; Previous
+				</button>
+
+				<span class="px-2 text-zinc-300 font-medium">
+					Page {data.pagination.page} of {Math.max(1, data.pagination.totalPages)}
+				</span>
+
+				<button
+					type="button"
+					disabled={data.pagination.page >= data.pagination.totalPages}
+					onclick={() => navigateToPage(data.pagination.page + 1)}
+					class="px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+				>
+					Next &rarr;
+				</button>
+			</div>
 		</div>
 	{/if}
 </div>

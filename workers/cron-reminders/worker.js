@@ -5,10 +5,14 @@
 
 export default {
 	async scheduled(event, env) {
-		const url = `${env.APP_URL}/api/cron/send-reminders?secret=${env.CRON_SECRET}`;
+		const url = `${env.APP_URL}/api/cron/send-reminders`;
 
 		try {
-			const response = await fetch(url);
+			const response = await fetch(url, {
+				headers: {
+					'Authorization': `Bearer ${env.CRON_SECRET}`
+				}
+			});
 			const result = await response.json();
 			console.log('Cron reminder result:', result);
 		} catch (err) {

@@ -34,35 +34,13 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 					 LEFT JOIN users u ON u.id = et.user_id
 					 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main')
 					   AND et.slug = ?
-					   AND COALESCE(et.is_active, 1) = 1`
+					   AND COALESCE(et.is_active, 1) = 1
+					   AND COALESCE(et.is_deleted, 0) = 0`
 				)
 				.bind(organization.id, params.slug)
 				.first();
-		} catch {
-			try {
-				eventType = await db
-					.prepare(
-						`SELECT et.id, et.slug, et.name, et.duration_minutes as duration,
-							et.description, et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
-							u.name as host_name, u.email as host_email, u.settings as host_settings,
-							u.outlook_refresh_token
-						 FROM event_types et
-						 LEFT JOIN users u ON u.id = et.user_id
-						 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main')
-						   AND et.slug = ?
-						   AND COALESCE(et.is_active, 1) = 1`
-					)
-					.bind(organization.id, params.slug)
-					.first();
-				if (eventType) {
-					eventType.is_free_only = 1;
-					eventType.price_inr = 0;
-					eventType.category = 'Consultation';
-					eventType.durations_json = `[${eventType.duration || 30}]`;
-				}
-			} catch (e2) {
-				console.error('Failed to query eventType:', e2);
-			}
+		} catch (err) {
+			console.error('Failed to query eventType in [slug]:', err);
 		}
 
 		if (!eventType) throw error(404, 'Event type not found or inactive');

@@ -23,9 +23,9 @@ export const load: PageServerLoad = async (event) => {
 
 	// Get user info including calendar connection status
 	const user = await db
-		.prepare('SELECT id, google_refresh_token, outlook_refresh_token, settings FROM users WHERE id = ?')
+		.prepare('SELECT id, google_refresh_token, outlook_refresh_token, google_calendar_connected, outlook_calendar_connected, settings FROM users WHERE id = ?')
 		.bind(userId)
-		.first<{ id: string; google_refresh_token: string | null; outlook_refresh_token: string | null; settings: string | null }>();
+		.first<{ id: string; google_refresh_token: string | null; outlook_refresh_token: string | null; google_calendar_connected: number | null; outlook_calendar_connected: number | null; settings: string | null }>();
 
 	// Check if Microsoft OAuth is configured
 	const outlookConfigured = !!(event.platform?.env?.MICROSOFT_CLIENT_ID && event.platform?.env?.MICROSOFT_CLIENT_SECRET);
@@ -44,8 +44,8 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		user: user ? {
-			googleConnected: !!user.google_refresh_token,
-			outlookConnected: !!user.outlook_refresh_token,
+			googleConnected: !!user.google_calendar_connected && !!user.google_refresh_token,
+			outlookConnected: !!user.outlook_calendar_connected && !!user.outlook_refresh_token,
 			defaultAvailabilityCalendars: userSettings.defaultAvailabilityCalendars,
 			defaultInviteCalendar: userSettings.defaultInviteCalendar,
 			selectedGoogleCalendars: userSettings.selectedGoogleCalendars

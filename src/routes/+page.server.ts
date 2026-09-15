@@ -51,7 +51,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 				`SELECT id, user_id, organization_id, name, slug, description, category, durations_json,
 				        duration_minutes, icon_name, color, cover_image, is_free_only, is_active
 				 FROM event_types
-				 WHERE COALESCE(is_active, 1) = 1
+				 WHERE COALESCE(is_active, 1) = 1 AND COALESCE(is_deleted, 0) = 0
 				 ORDER BY created_at ASC`
 			)
 			.all();
@@ -64,7 +64,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 				`SELECT u.id, u.name, u.email, u.slug, u.profile_image, u.role_title, u.bio,
 				        u.session_pricing, u.is_free_consultation, u.brand_color
 				 FROM users u
-				 WHERE u.is_active = 1
+				 WHERE u.is_active = 1 AND COALESCE(u.is_deleted, 0) = 0
 				 ORDER BY u.created_at ASC`
 			)
 			.all();

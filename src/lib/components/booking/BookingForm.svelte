@@ -10,6 +10,7 @@
 			countryCode: string;
 			notes: string;
 			couponCode: string;
+			verificationToken?: string;
 		};
 		eventSlug: string;
 		isFreeOnly?: boolean;
@@ -42,9 +43,101 @@
 	let finalPrice = $state(isFreeOnly ? 0 : basePriceInr);
 	let isComplimentary = $state(isFreeOnly || basePriceInr === 0);
 
+	// Email Verification State
+	let otpCode = $state('');
+	let otpSent = $state(false);
+	let sendingOtp = $state(false);
+	let verifyingOtp = $state(false);
+	let isVerified = $state(false);
+	let otpError = $state('');
+	let otpSuccess = $state('');
+	let verifiedEmail = $state('');
+	let emailNotice = $state('');
+
 	function handleCountrySelect(country: CountryInfo) {
 		bookingForm.countryCode = country.dialCode;
 		selectedCountryFlag = country.flag;
+	}
+
+	function handleEmailInput() {
+		if (verifiedEmail && bookingForm.email !== verifiedEmail) {
+			isVerified = false;
+			bookingForm.verificationToken = '';
+			otpSent = false;
+			otpSuccess = '';
+			otpError = '';
+			emailNotice = '';
+		}
+	}
+
+	async function handleSendOtp() {
+		if (!bookingForm.email || !bookingForm.email.includes('@')) {
+			otpError = 'Please enter a valid email address.';
+			return;
+		}
+
+		sendingOtp = true;
+		otpError = '';
+		otpSuccess = '';
+		emailNotice = '';
+
+		try {
+			const res = await fetch('/api/otp/send', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: bookingForm.email.trim(), purpose: 'booking' })
+			});
+			const result = (await res.json()) as { success?: boolean; message?: string; notice?: string };
+			if (!res.ok) {
+				otpError = result.message || 'Failed to send verification code.';
+			} else {
+				otpSent = true;
+				otpSuccess = '6-digit verification code sent to your email!';
+				if (result.notice) {
+					emailNotice = result.notice;
+				}
+			}
+		} catch (err: any) {
+			otpError = 'Network error while sending verification code.';
+		} finally {
+			sendingOtp = false;
+		}
+	}
+
+	async function handleVerifyOtp() {
+		if (!otpCode || otpCode.trim().length !== 6) {
+			otpError = 'Please enter the 6-digit verification code.';
+			return;
+		}
+
+		verifyingOtp = true;
+		otpError = '';
+		otpSuccess = '';
+
+		try {
+			const res = await fetch('/api/otp/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					email: bookingForm.email.trim(),
+					code: otpCode.trim(),
+					purpose: 'booking'
+				})
+			});
+			const result = (await res.json()) as { success?: boolean; verifiedToken?: string; message?: string };
+			if (!res.ok || !result.verifiedToken) {
+				otpError = result.message || 'Invalid or expired code.';
+			} else {
+				bookingForm.verificationToken = result.verifiedToken;
+				verifiedEmail = bookingForm.email.trim();
+				isVerified = true;
+				otpSuccess = 'Email identity verified successfully!';
+			}
+		} catch (err: any) {
+			otpError = 'Network error while verifying code.';
+		} finally {
+			verifyingOtp = false;
+		}
 	}
 
 	async function handleApplyCoupon() {
@@ -128,19 +221,116 @@
 			/>
 		</div>
 
-		<!-- Email Address -->
+		<!-- Email Address with Verification -->
 		<div>
-			<label for="email" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
-				Email Address *
-			</label>
-			<input
-				type="email"
-				id="email"
-				bind:value={bookingForm.email}
-				required
-				placeholder="you@company.com"
-				class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all"
-			/>
+			<div class="flex items-center justify-between mb-1.5">
+				<label for="email" class="block text-xs font-bold uppercase tracking-wider text-zinc-300">
+					Work / Personal Email *
+				</label>
+				{#if isVerified}
+					<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+						<span>✓</span>
+						<span>Verified</span>
+					</span>
+				{:else}
+					<span class="text-[10px] text-zinc-400 font-medium">OTP Verification Required</span>
+				{/if}
+			</div>
+
+			<div class="flex gap-2">
+				<input
+					type="email"
+					id="email"
+					bind:value={bookingForm.email}
+					oninput={handleEmailInput}
+					disabled={isVerified}
+					required
+					placeholder="you@company.com"
+					class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-60 transition-all"
+				/>
+				{#if !isVerified}
+					{#if !otpSent}
+						<button
+							type="button"
+							onclick={handleSendOtp}
+							disabled={sendingOtp || !bookingForm.email?.includes('@')}
+							class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0"
+						>
+							{sendingOtp ? 'Sending...' : 'Send OTP'}
+						</button>
+					{:else}
+						<button
+							type="button"
+							onclick={() => { otpSent = false; otpCode = ''; }}
+							class="px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-all shrink-0"
+						>
+							Change
+						</button>
+					{/if}
+				{:else}
+					<button
+						type="button"
+						onclick={() => { isVerified = false; bookingForm.verificationToken = ''; otpSent = false; }}
+						class="px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-400 hover:text-white transition-all shrink-0"
+					>
+						Edit
+					</button>
+				{/if}
+			</div>
+
+			<!-- OTP input box if sent and not yet verified -->
+			{#if otpSent && !isVerified}
+				<div class="mt-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 space-y-2 animate-fade-in">
+					<div class="flex items-center justify-between text-[11px] text-blue-300">
+						<span>Enter 6-digit code sent to your email:</span>
+						<button
+							type="button"
+							onclick={handleSendOtp}
+							disabled={sendingOtp}
+							class="text-[10px] underline text-blue-400 hover:text-blue-300 disabled:opacity-50"
+						>
+							Resend Code
+						</button>
+					</div>
+					<div class="flex gap-2">
+						<input
+							type="text"
+							maxlength="6"
+							bind:value={otpCode}
+							placeholder="123456"
+							class="flex-1 px-3 py-2 rounded-lg bg-black/40 border border-blue-500/50 text-center font-mono text-sm tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-blue-400"
+						/>
+						<button
+							type="button"
+							onclick={handleVerifyOtp}
+							disabled={verifyingOtp || otpCode.trim().length !== 6}
+							class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0"
+						>
+							{verifyingOtp ? 'Verifying...' : 'Verify'}
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			{#if emailNotice}
+				<p class="text-[11px] text-amber-300/90 mt-1.5 flex items-center gap-1">
+					<span>💡</span>
+					<span>{emailNotice}</span>
+				</p>
+			{/if}
+			{#if otpError}
+				<p class="text-[11px] text-red-400 mt-1.5 flex items-center gap-1 font-medium">
+					<span>✕</span>
+					<span>{otpError}</span>
+				</p>
+			{/if}
+			{#if otpSuccess}
+				<p class="text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1 font-medium">
+					<span>✓</span>
+					<span>{otpSuccess}</span>
+				</p>
+			{/if}
+			<p class="text-[10px] text-zinc-500 mt-1">Temporary or disposable email domains are blocked for security.</p>
 		</div>
 
 		<!-- Phone Number with Country Code Dropdown -->
@@ -170,7 +360,7 @@
 			<p class="text-[10px] text-zinc-500 mt-1">Used for meeting reminders and urgent schedule adjustments.</p>
 		</div>
 
-		<!-- Coupon Code Input (Always accessible for client discount codes or VIP complimentary access) -->
+		<!-- Coupon Code Input -->
 		<div class="pt-1">
 			<label for="coupon" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
 				Have a Coupon or Referral Code?
@@ -233,10 +423,18 @@
 
 		<button
 			type="submit"
-			disabled={bookingStatus === 'submitting'}
-			class="w-full btn-electric py-3 px-6 rounded-xl font-bold text-xs sm:text-sm shadow-[0_0_24px_rgba(59,130,246,0.4)] transition disabled:opacity-50"
+			disabled={bookingStatus === 'submitting' || !isVerified}
+			class="w-full btn-electric py-3 px-6 rounded-xl font-bold text-xs sm:text-sm shadow-[0_0_24px_rgba(59,130,246,0.4)] transition disabled:opacity-50 disabled:cursor-not-allowed"
 		>
-			{bookingStatus === 'submitting' ? 'Scheduling Meeting...' : 'Confirm & Schedule Consultation →'}
+			{#if bookingStatus === 'submitting'}
+				Scheduling Meeting...
+			{:else if !isVerified}
+				Verify Email with OTP to Schedule
+			{:else if isComplimentary}
+				Confirm & Schedule Consultation →
+			{:else}
+				Proceed to Payment (₹{finalPrice}) →
+			{/if}
 		</button>
 	</form>
 </div>

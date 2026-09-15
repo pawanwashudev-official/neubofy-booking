@@ -23,7 +23,8 @@ export const GET: RequestHandler = async (event) => {
 			env.DB,
 			userId,
 			env.GOOGLE_CLIENT_ID,
-			env.GOOGLE_CLIENT_SECRET
+			env.GOOGLE_CLIENT_SECRET,
+			env.JWT_SECRET
 		);
 
 		const calendars = await listCalendars(accessToken);

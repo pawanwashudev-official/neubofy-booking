@@ -53,14 +53,19 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		// Get user profile to verify the connection
 		await getOutlookUserProfile(tokens.access_token);
 
-		// Store refresh token in database
+		// Store refresh token in database (encrypted)
+		const { encryptToken } = await import('$lib/server/encryption');
+		const encryptedToken = tokens.refresh_token
+			? await encryptToken(tokens.refresh_token, env.JWT_SECRET)
+			: null;
+
 		const db = env.DB;
 		await db
-			.prepare('UPDATE users SET outlook_refresh_token = ? WHERE id = ?')
-			.bind(tokens.refresh_token, storedUserId)
+			.prepare('UPDATE users SET outlook_refresh_token = ?, outlook_calendar_connected = 1 WHERE id = ?')
+			.bind(encryptedToken, storedUserId)
 			.run();
 
-		throw redirect(302, '/dashboard?success=outlook_connected');
+		throw redirect(302, '/dashboard/calendars?success=outlook_connected');
 	} catch (err: unknown) {
 		if (err && typeof err === 'object' && 'status' in err && err.status === 302) throw err;
 		console.error('Outlook OAuth callback error:', err);

@@ -29,7 +29,7 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 		// Get event type
 		const eventType = await db
 			.prepare(
-				'SELECT id, name, slug, duration_minutes as duration, description, is_active, cover_image, invite_calendar FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1'
+				'SELECT id, name, slug, duration_minutes as duration, description, is_active, cover_image, invite_calendar FROM event_types WHERE user_id = ? AND slug = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0'
 			)
 			.bind(user.id, slug)
 			.first<{
@@ -100,13 +100,9 @@ export const DELETE: RequestHandler = async (event) => {
 	}
 
 	await db.batch([
-		db.prepare('DELETE FROM event_type_members WHERE event_type_id = ?').bind(eventType.id),
-		db.prepare('DELETE FROM reschedule_proposals WHERE booking_id IN (SELECT id FROM bookings WHERE event_type_id = ?)').bind(eventType.id),
-		db.prepare('DELETE FROM scheduled_emails WHERE booking_id IN (SELECT id FROM bookings WHERE event_type_id = ?)').bind(eventType.id),
-		db.prepare('DELETE FROM bookings WHERE event_type_id = ?').bind(eventType.id),
-		db.prepare('DELETE FROM availability_rules WHERE event_type_id = ?').bind(eventType.id),
-		db.prepare('DELETE FROM event_types WHERE id = ?').bind(eventType.id)
+		db.prepare('UPDATE event_types SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP, is_active = 0 WHERE id = ?').bind(eventType.id),
+		db.prepare('UPDATE event_type_members SET is_active = 0 WHERE event_type_id = ?').bind(eventType.id)
 	]);
 
-	return json({ success: true, id: eventType.id });
+	return json({ success: true, id: eventType.id, message: 'Consultation service moved to Recycle Bin.' });
 };

@@ -4,6 +4,7 @@
 
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { maskEmail } from '$lib/server/email-verification';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
 	const db = platform?.env?.DB;
@@ -71,7 +72,7 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 			startTime: booking.start_time,
 			endTime: booking.end_time,
 			attendeeName: booking.attendee_name,
-			attendeeEmail: booking.attendee_email,
+			maskedEmail: maskEmail(booking.attendee_email),
 			attendeeNotes: booking.attendee_notes,
 			eventName: booking.event_name,
 			eventSlug: booking.event_slug,

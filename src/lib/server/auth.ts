@@ -129,58 +129,26 @@ export async function getGoogleUserInfo(accessToken: string): Promise<GoogleUser
 }
 
 /**
- * Create session token (simple JWT-like token)
+ * Sign data using Web Crypto HMAC-SHA256
  */
-export async function createSessionToken(
-	userId: string,
-	secret: string
-): Promise<string> {
-	const payload = {
-		userId,
-		iat: Date.now()
-	};
-
-	// Simple base64 encoding with signature
-	const data = btoa(JSON.stringify(payload));
-	const signature = await hashString(`${data}.${secret}`);
-
-	return `${data}.${signature}`;
-}
-
-/**
- * Verify session token
- */
-export async function verifySessionToken(
-	token: string,
-	secret: string
-): Promise<{ userId: string } | null> {
-	try {
-		const [data, signature] = token.split('.');
-		const expectedSignature = await hashString(`${data}.${secret}`);
-
-		// Timing-safe comparison to prevent timing attacks
-		if (!timingSafeEqual(signature, expectedSignature)) {
-			return null;
-		}
-
-		const payload = JSON.parse(atob(data));
-
-		// Check if token is expired (7 days - matches cookie maxAge)
-		const age = Date.now() - payload.iat;
-		if (age > 7 * 24 * 60 * 60 * 1000) {
-			return null;
-		}
-
-		return { userId: payload.userId };
-	} catch {
-		return null;
-	}
+async function signHmac(data: string, secret: string): Promise<string> {
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign']
+	);
+	const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+	const hashArray = Array.from(new Uint8Array(signature));
+	return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
  * Timing-safe string comparison to prevent timing attacks
  */
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
 	if (a.length !== b.length) return false;
 	const encoder = new TextEncoder();
 	const bufA = encoder.encode(a);
@@ -193,14 +161,81 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Hash string using Web Crypto API
+ * Hash string using Web Crypto API (legacy support)
  */
 async function hashString(str: string): Promise<string> {
 	const encoder = new TextEncoder();
 	const data = encoder.encode(str);
 	const hashBuffer = await crypto.subtle.digest('SHA-256', data);
 	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+	return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Create session token with HMAC-SHA256 signature
+ */
+export async function createSessionToken(
+	userId: string,
+	secret: string
+): Promise<string> {
+	const now = Date.now();
+	const payload = {
+		iss: 'neubofy-booking',
+		sub: userId,
+		userId,
+		iat: now,
+		exp: now + 7 * 24 * 60 * 60 * 1000
+	};
+
+	const data = btoa(JSON.stringify(payload));
+	const signature = await signHmac(data, secret);
+
+	return `${data}.${signature}`;
+}
+
+/**
+ * Verify session token (HMAC-SHA256 with fallback to legacy hash for existing sessions)
+ */
+export async function verifySessionToken(
+	token: string,
+	secret: string
+): Promise<{ userId: string } | null> {
+	try {
+		const parts = token.split('.');
+		if (parts.length !== 2) return null;
+		const [data, signature] = parts;
+
+		// 1. Modern HMAC-SHA256 check
+		const expectedHmac = await signHmac(data, secret);
+		let isValid = timingSafeEqual(signature, expectedHmac);
+
+		// 2. Legacy fallback check
+		if (!isValid) {
+			const expectedLegacy = await hashString(`${data}.${secret}`);
+			isValid = timingSafeEqual(signature, expectedLegacy);
+		}
+
+		if (!isValid) {
+			return null;
+		}
+
+		const payload = JSON.parse(atob(data));
+
+		const now = Date.now();
+		if (payload.exp && now > payload.exp) {
+			return null;
+		}
+		if (payload.iat && now - payload.iat > 7 * 24 * 60 * 60 * 1000) {
+			return null;
+		}
+
+		const userId = payload.sub || payload.userId;
+		if (!userId) return null;
+
+		return { userId };
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -257,19 +292,7 @@ export async function getAuthContext(event: RequestEvent): Promise<AuthContext |
 		}
 	}
 
-	// Auto-heal membership if missing but organization exists
-	if (!membership) {
-		try {
-			const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
-			if (org) {
-				const orgId = org.id;
-				await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
-					.bind(orgId, userId, 'admin').run();
-				membership = { organizationId: orgId, role: 'admin' as OrganizationRole };
-			}
-		} catch {}
-	}
-
+	// Auto-heal privilege escalation removed: users without an active membership cannot access dashboard
 	return membership ? { userId, ...membership } : null;
 }
 

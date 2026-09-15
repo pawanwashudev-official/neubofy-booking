@@ -26,29 +26,20 @@ export const load: LayoutServerLoad = async (event) => {
 		};
 	}
 
-	// 1. Fetch user with safe fallback
+	// 1. Fetch user
 	let user: any = null;
 	try {
 		user = await db
 			.prepare(
 				`SELECT id, name, email, slug, profile_image, brand_color, role_title, bio, phone,
-				        session_pricing, is_free_consultation, google_refresh_token, outlook_refresh_token
-				 FROM users WHERE id = ?`
+				        session_pricing, is_free_consultation, google_refresh_token, outlook_refresh_token,
+				        google_calendar_connected, outlook_calendar_connected
+				 FROM users WHERE id = ? AND COALESCE(is_deleted, 0) = 0`
 			)
 			.bind(userId)
 			.first();
-	} catch (e1) {
-		try {
-			user = await db
-				.prepare(
-					`SELECT id, name, email, slug, profile_image, brand_color, google_refresh_token
-					 FROM users WHERE id = ?`
-				)
-				.bind(userId)
-				.first();
-		} catch (e2) {
-			console.error('Failed to load user in dashboard layout:', e2);
-		}
+	} catch (err) {
+		console.error('Failed to load user in dashboard layout:', err);
 	}
 
 	if (!user) {
@@ -146,8 +137,8 @@ export const load: LayoutServerLoad = async (event) => {
 			phone: user.phone,
 			is_free_consultation: user.is_free_consultation,
 			session_pricing: parsedPricing,
-			googleConnected: !!user.google_refresh_token,
-			outlookConnected: !!user.outlook_refresh_token
+			googleConnected: !!user.google_calendar_connected && !!user.google_refresh_token,
+			outlookConnected: !!user.outlook_calendar_connected && !!user.outlook_refresh_token
 		},
 		organization: organization || {
 			id: 'org_neubofy_main',

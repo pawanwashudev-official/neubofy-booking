@@ -1,9 +1,8 @@
 /**
- * Disconnect Outlook calendar
+ * Disconnect Google Calendar integration
  */
 
-import { redirect } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import { redirect, type RequestHandler } from '@sveltejs/kit';
 import { getCurrentUser } from '$lib/server/auth';
 
 export const POST: RequestHandler = async (event) => {
@@ -17,12 +16,12 @@ export const POST: RequestHandler = async (event) => {
 		throw redirect(302, '/auth/login');
 	}
 
-	// Remove Outlook refresh token and reset connected flag
+	// Reset Google calendar connected flag
 	const db = env.DB;
 	await db
-		.prepare('UPDATE users SET outlook_refresh_token = NULL, outlook_calendar_connected = 0 WHERE id = ?')
+		.prepare('UPDATE users SET google_calendar_connected = 0 WHERE id = ?')
 		.bind(userId)
 		.run();
 
-	throw redirect(302, '/dashboard/calendars?success=outlook_disconnected');
+	throw redirect(302, '/dashboard/calendars?success=google_disconnected');
 };

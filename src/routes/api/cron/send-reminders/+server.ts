@@ -8,6 +8,7 @@
 
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { sendReminderEmail, getEmailTemplates, getOrganizationEmailConfig, type EmailTemplateType } from '$lib/server/email';
+import { timingSafeEqual } from '$lib/server/auth';
 
 export const GET = async ({ request, platform }: RequestEvent) => {
 	const env = platform?.env;
@@ -21,7 +22,7 @@ export const GET = async ({ request, platform }: RequestEvent) => {
 	if (!env.CRON_SECRET) {
 		throw error(500, 'CRON_SECRET is not configured');
 	}
-	if (cronSecret !== env.CRON_SECRET) {
+	if (!cronSecret || !timingSafeEqual(cronSecret, env.CRON_SECRET)) {
 		throw error(401, 'Unauthorized');
 	}
 

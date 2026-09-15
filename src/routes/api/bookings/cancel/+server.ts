@@ -44,7 +44,7 @@ export const POST = async (event: RequestEvent) => {
 				FROM bookings b
 				JOIN event_types e ON b.event_type_id = e.id
 				JOIN users u ON b.user_id = u.id
-				WHERE b.id = ?`
+				WHERE b.id = ? AND COALESCE(b.is_deleted, 0) = 0`
 			)
 			.bind(bookingId)
 			.first<{
@@ -86,7 +86,8 @@ export const POST = async (event: RequestEvent) => {
 					db,
 					booking.user_id,
 					env.GOOGLE_CLIENT_ID,
-					env.GOOGLE_CLIENT_SECRET
+					env.GOOGLE_CLIENT_SECRET,
+					env.JWT_SECRET
 				);
 				await cancelCalendarEvent(accessToken, booking.google_event_id);
 			} catch (err) {

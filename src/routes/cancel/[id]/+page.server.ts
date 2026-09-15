@@ -6,6 +6,7 @@ import { error, redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
 import { sendCancellationEmail, sendAdminCancellationNotification, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
+import { maskEmail, verifyVerificationToken } from '$lib/server/email-verification';
 
 export const load: PageServerLoad = async ({ params, platform }) => {
 	const db = platform?.env?.DB;
@@ -43,16 +44,19 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 		throw error(404, 'Booking not found');
 	}
 
-	if (booking.status === 'canceled') {
-		return {
-			booking,
-			alreadyCanceled: true
-		};
-	}
-
 	return {
-		booking,
-		alreadyCanceled: false
+		booking: {
+			id: booking.id,
+			start_time: booking.start_time,
+			end_time: booking.end_time,
+			attendee_name: booking.attendee_name,
+			status: booking.status,
+			event_name: booking.event_name,
+			event_slug: booking.event_slug,
+			host_name: booking.host_name
+		},
+		maskedEmail: maskEmail(booking.attendee_email),
+		alreadyCanceled: booking.status === 'canceled'
 	};
 };
 
@@ -66,15 +70,26 @@ export const actions: Actions = {
 
 		const bookingId = params.id;
 
-		// Get cancellation reason from form
+		// Get form inputs including verification tokens
 		const formData = await request.formData();
 		const reason = formData.get('reason')?.toString().trim() || null;
+		const email = formData.get('email')?.toString().trim().toLowerCase() || null;
+		const verificationToken = formData.get('verificationToken')?.toString().trim() || null;
+
+		if (!email || !verificationToken) {
+			return fail(400, { error: 'Email identity verification is required to cancel this consultation.' });
+		}
+
+		const secret = env.JWT_SECRET;
+		if (!secret) {
+			return fail(500, { error: 'Server configuration error: JWT_SECRET missing' });
+		}
 
 		try {
 			// Get booking and user details
 			const booking = await db
 				.prepare(
-					`SELECT b.id, b.user_id, b.google_event_id, b.status
+					`SELECT b.id, b.user_id, b.google_event_id, b.status, b.attendee_email
 					FROM bookings b
 					WHERE b.id = ?`
 				)
@@ -84,6 +99,7 @@ export const actions: Actions = {
 					user_id: string;
 					google_event_id: string | null;
 					status: string;
+					attendee_email: string;
 				}>();
 
 			if (!booking) {
@@ -94,6 +110,20 @@ export const actions: Actions = {
 				return fail(400, { error: 'Booking already canceled' });
 			}
 
+			// Validate provided email against booking's attendee_email
+			if (email !== booking.attendee_email.toLowerCase()) {
+				return fail(403, { error: 'The email address entered does not match the consultation record.' });
+			}
+
+			// Verify token cryptographically
+			const tokenCheck = await verifyVerificationToken(verificationToken, secret, booking.attendee_email, 'cancel');
+			if (!tokenCheck.valid) {
+				const fallbackCheck = await verifyVerificationToken(verificationToken, secret, booking.attendee_email);
+				if (!fallbackCheck.valid) {
+					return fail(403, { error: 'Invalid or expired verification session. Please verify your email again.' });
+				}
+			}
+
 			// Cancel in Google Calendar if event exists
 			if (booking.google_event_id) {
 				try {
@@ -101,7 +131,8 @@ export const actions: Actions = {
 						db,
 						booking.user_id,
 						env.GOOGLE_CLIENT_ID,
-						env.GOOGLE_CLIENT_SECRET
+						env.GOOGLE_CLIENT_SECRET,
+						env.JWT_SECRET
 					);
 					await cancelCalendarEvent(accessToken, booking.google_event_id);
 				} catch (err) {

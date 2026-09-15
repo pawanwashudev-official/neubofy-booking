@@ -29,14 +29,15 @@ export const load: PageServerLoad = async (event) => {
 			        c.is_active, c.expires_at, c.created_at, et.name as event_type_name
 			 FROM coupons c
 			 LEFT JOIN event_types et ON et.id = c.event_type_id
-			 WHERE c.organization_id = ? OR c.organization_id = 'org_neubofy_main'
+			 WHERE (c.organization_id = ? OR c.organization_id = 'org_neubofy_main')
+			   AND COALESCE(c.is_deleted, 0) = 0
 			 ORDER BY c.created_at DESC`
 		)
 		.bind(auth.organizationId || 'org_neubofy_main')
 		.all();
 
 	const eventTypesResult = await db
-		.prepare('SELECT id, name, slug FROM event_types WHERE is_active = 1 ORDER BY name ASC')
+		.prepare('SELECT id, name, slug FROM event_types WHERE is_active = 1 AND COALESCE(is_deleted, 0) = 0 ORDER BY name ASC')
 		.all();
 
 	return {
@@ -155,10 +156,10 @@ export const actions: Actions = {
 		const couponId = (formData.get('id') || '').toString();
 
 		await db
-			.prepare('DELETE FROM coupons WHERE id = ?')
+			.prepare('UPDATE coupons SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP, is_active = 0 WHERE id = ?')
 			.bind(couponId)
 			.run();
 
-		return { success: true };
+		return { success: true, message: 'Coupon moved to Recycle Bin.' };
 	}
 };

@@ -23,10 +23,15 @@ export const DELETE = async (event: RequestEvent) => {
 	if (body.confirmation !== booking.attendee_name) throw error(400, 'Type the attendee name to confirm deletion');
 
 	await db.batch([
-		db.prepare('DELETE FROM reschedule_proposals WHERE booking_id = ?').bind(booking.id),
-		db.prepare('DELETE FROM scheduled_emails WHERE booking_id = ?').bind(booking.id),
-		db.prepare('DELETE FROM bookings WHERE id = ? AND organization_id = ?').bind(booking.id, auth.organizationId)
+		db.prepare("UPDATE scheduled_emails SET status = 'cancelled' WHERE booking_id = ? AND status = 'pending'").bind(booking.id),
+		db.prepare(
+			`UPDATE bookings 
+			 SET is_deleted = 1, 
+			     deleted_at = CURRENT_TIMESTAMP, 
+			     deleted_by = ? 
+			 WHERE id = ? AND organization_id = ?`
+		).bind(auth.userId, booking.id, auth.organizationId)
 	]);
 
-	return json({ success: true });
+	return json({ success: true, message: 'Booking moved to Recycle Bin.' });
 };

@@ -12,17 +12,12 @@ DROP TABLE IF EXISTS email_templates;
 DROP TABLE IF EXISTS email_verifications;
 DROP TABLE IF EXISTS coupons;
 DROP TABLE IF EXISTS bookings;
-DROP TABLE IF EXISTS date_overrides;
 DROP TABLE IF EXISTS availability_overrides;
 DROP TABLE IF EXISTS availability_rules;
 DROP TABLE IF EXISTS event_type_members;
 DROP TABLE IF EXISTS event_types;
 DROP TABLE IF EXISTS organization_invitations;
 DROP TABLE IF EXISTS organization_members;
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS webhooks;
-DROP TABLE IF EXISTS api_usage;
-DROP TABLE IF EXISTS cache_control;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS organizations;
 
@@ -59,10 +54,14 @@ CREATE TABLE users (
     bio TEXT,
     phone TEXT,
     session_pricing JSON DEFAULT '[{"duration": 30, "price": 999, "label": "30 Min Strategy Consultation"}, {"duration": 60, "price": 1999, "label": "60 Min Deep Dive"}]',
-    is_free_consultation BOOLEAN DEFAULT 1,
+    is_free_consultation BOOLEAN DEFAULT 0,
     is_active BOOLEAN DEFAULT 1,
     google_refresh_token TEXT,
     outlook_refresh_token TEXT,
+    google_calendar_connected BOOLEAN DEFAULT 0,
+    outlook_calendar_connected BOOLEAN DEFAULT 0,
+    is_deleted BOOLEAN DEFAULT 0,
+    deleted_at DATETIME,
     sync_token TEXT,
     last_sync DATETIME,
     settings JSON DEFAULT '{}',
@@ -121,13 +120,17 @@ CREATE TABLE event_types (
     color TEXT DEFAULT '#3b82f6',
     description TEXT,
     category TEXT DEFAULT 'Decide', -- Decide, Implement, Improve, Protect & Verify, Operate
-    is_free_only BOOLEAN DEFAULT 1, -- 1 = Complimentary (100% Free), 0 = Paid consultation
+    is_free_only BOOLEAN DEFAULT 0, -- 1 = Complimentary (100% Free), 0 = Standard pricing
     price_inr INTEGER DEFAULT 0, -- Base price in INR
+    price_min_inr INTEGER DEFAULT 0, -- Minimum price floor
+    price_max_inr INTEGER DEFAULT 99999, -- Maximum price cap
     durations_json TEXT DEFAULT '[30, 60]', -- Supported duration options in minutes
     icon_name TEXT DEFAULT 'lightbulb',
     location_type TEXT DEFAULT 'google_meet',
     location_details TEXT,
     is_active BOOLEAN DEFAULT 1,
+    is_deleted BOOLEAN DEFAULT 0,
+    deleted_at DATETIME,
     cover_image TEXT,
     availability_calendars TEXT DEFAULT 'google',
     invite_calendar TEXT DEFAULT 'google',
@@ -209,7 +212,7 @@ CREATE TABLE bookings (
     price_amount INTEGER DEFAULT 0, -- Final price charged in INR
     discount_amount INTEGER DEFAULT 0, -- Applied discount in INR
     coupon_code TEXT, -- Applied promo/waiver coupon
-    is_paid BOOLEAN DEFAULT 1, -- 1 for complimentary or paid bookings
+    is_paid BOOLEAN DEFAULT 0, -- 1 for verified paid or complimentary bookings, 0 for pending payment
     email_verified BOOLEAN DEFAULT 1,
     google_event_id TEXT,
     outlook_event_id TEXT,
@@ -218,6 +221,9 @@ CREATE TABLE bookings (
     canceled_at DATETIME,
     canceled_by TEXT CHECK (canceled_by IN ('host', 'attendee')),
     cancellation_reason TEXT,
+    is_deleted BOOLEAN DEFAULT 0,
+    deleted_at DATETIME,
+    deleted_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
     FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE RESTRICT,
@@ -240,6 +246,8 @@ CREATE TABLE coupons (
     max_uses INTEGER, -- NULL = unlimited
     used_count INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT 1,
+    is_deleted BOOLEAN DEFAULT 0,
+    deleted_at DATETIME,
     expires_at DATETIME,
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -318,27 +326,15 @@ CREATE TABLE reschedule_proposals (
 CREATE INDEX idx_reschedule_proposals_booking ON reschedule_proposals(booking_id);
 CREATE INDEX idx_reschedule_proposals_token ON reschedule_proposals(response_token);
 
--- 16. Auth sessions and tokens
-CREATE TABLE sessions (
-    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    user_id TEXT NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    expires_at DATETIME NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_sessions_token ON sessions(token);
-CREATE INDEX idx_sessions_expires ON sessions(expires_at);
-
--- 17. Views for common queries
+-- 16. Views for common queries (excluding soft-deleted records)
 CREATE VIEW active_event_types AS
-SELECT * FROM event_types WHERE is_active = 1;
+SELECT * FROM event_types WHERE is_active = 1 AND COALESCE(is_deleted, 0) = 0;
 
 CREATE VIEW upcoming_bookings AS
 SELECT * FROM bookings 
 WHERE status = 'confirmed' 
 AND start_time > CURRENT_TIMESTAMP 
+AND COALESCE(is_deleted, 0) = 0
 ORDER BY start_time;
 
 -- ==============================================================================
@@ -365,7 +361,7 @@ INSERT INTO organizations (
 -- 2. Core Consultation Services
 INSERT INTO event_types (
     id, organization_id, name, slug, duration_minutes,
-    description, category, is_free_only, price_inr,
+    description, category, is_free_only, price_inr, price_min_inr, price_max_inr,
     durations_json, icon_name, location_type, is_active
 ) VALUES 
 (
@@ -376,8 +372,10 @@ INSERT INTO event_types (
     30,
     'High-impact 30-minute strategic evaluation of your technical architecture, product roadmap, or engineering challenges with a Neubofy lead specialist.',
     'Decide',
-    1,
     0,
+    999,
+    0,
+    99999,
     '[30, 60]',
     'lightbulb',
     'google_meet',
@@ -391,8 +389,10 @@ INSERT INTO event_types (
     60,
     'Comprehensive 60-minute technical consultation: codebase assessment, Cloudflare/AWS cloud architecture review, and system scaling strategy.',
     'Implement',
-    1,
     0,
+    1999,
+    0,
+    99999,
     '[30, 60]',
     'cpu',
     'google_meet',
@@ -406,8 +406,10 @@ INSERT INTO event_types (
     45,
     'In-depth audit covering security vulnerabilities, dead code elimination, infrastructure efficiency, and production readiness verification.',
     'Protect & Verify',
-    1,
     0,
+    2999,
+    0,
+    99999,
     '[30, 45, 60]',
     'shield',
     'google_meet',

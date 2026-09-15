@@ -5,10 +5,9 @@
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { createOutlookCalendarEvent, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
-import { sendBookingEmail, sendAdminNotificationEmail, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled, type EmailTemplateType } from '$lib/server/email';
+import { finalizeConfirmedBooking } from '$lib/server/booking-service';
 import { isValidEmail, validateLength, validateFields, MAX_LENGTHS } from '$lib/server/validation';
+import { timingSafeEqual } from '$lib/server/auth';
 
 async function verifyOtpToken(token: string, secret: string, email: string): Promise<boolean> {
 	try {
@@ -16,18 +15,39 @@ async function verifyOtpToken(token: string, secret: string, email: string): Pro
 		if (!data || !signature) return false;
 
 		const encoder = new TextEncoder();
-		const keyData = encoder.encode(`${data}.${secret}`);
-		const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
-		const hashArray = Array.from(new Uint8Array(hashBuffer));
-		const expectedSignature = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+		let isValid = false;
 
-		if (signature !== expectedSignature) return false;
+		// 1. Check HMAC-SHA256
+		try {
+			const key = await crypto.subtle.importKey(
+				'raw',
+				encoder.encode(secret),
+				{ name: 'HMAC', hash: 'SHA-256' },
+				false,
+				['sign']
+			);
+			const hmacSig = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+			const expectedHmac = Array.from(new Uint8Array(hmacSig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+			isValid = timingSafeEqual(signature, expectedHmac);
+		} catch {}
+
+		// 2. Legacy fallback
+		if (!isValid) {
+			const keyData = encoder.encode(`${data}.${secret}`);
+			const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			const expectedLegacy = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+			isValid = timingSafeEqual(signature, expectedLegacy);
+		}
+
+		if (!isValid) return false;
 
 		const payload = JSON.parse(atob(data));
 		if (payload.email?.toLowerCase() !== email.toLowerCase()) return false;
 
 		// Token valid for 30 minutes
-		const age = Date.now() - payload.verifiedAt;
+		const timestamp = payload.verifiedAt || payload.iat || 0;
+		const age = Date.now() - timestamp;
 		if (age > 30 * 60 * 1000) return false;
 
 		return true;
@@ -91,19 +111,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			throw error(400, 'Invalid email address');
 		}
 
-		// Email OTP Verification check
-		let isEmailVerified = 1;
+		// Email OTP Verification check (mandatory for all bookings)
 		const secret = env.JWT_SECRET;
 		if (!secret) {
 			throw error(500, 'Server configuration error: JWT_SECRET is not set');
 		}
-		if (verificationToken) {
-			const isValid = await verifyOtpToken(verificationToken, secret, attendeeEmail);
-			if (!isValid) {
-				throw error(400, 'Invalid or expired email verification code. Please verify again.');
-			}
-			isEmailVerified = 1;
+		if (!verificationToken) {
+			throw error(400, 'Email verification is required. Please verify your email before booking.');
 		}
+		const isOtpValid = await verifyOtpToken(verificationToken, secret, attendeeEmail);
+		if (!isOtpValid) {
+			throw error(400, 'Invalid or expired email verification code. Please verify again.');
+		}
+		const isEmailVerified = 1;
 
 		// Validate input lengths
 		const lengthError = validateFields([
@@ -145,12 +165,23 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		// Fetch consultation event type
 		const eventType = await db
 			.prepare(
-				`SELECT id, user_id, name, duration_minutes as duration, description, invite_calendar, is_free_only, price_inr 
+				`SELECT id, user_id, name, duration_minutes as duration, description, invite_calendar, is_free_only, price_inr, price_min_inr, price_max_inr 
 				 FROM event_types 
-				 WHERE slug = ? AND is_active = 1 LIMIT 1`
+				 WHERE slug = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0 LIMIT 1`
 			)
 			.bind(eventSlug)
-			.first<{ id: string; user_id: string | null; name: string; duration: number; description: string | null; invite_calendar: string | null; is_free_only: number; price_inr: number | null }>();
+			.first<{
+				id: string;
+				user_id: string | null;
+				name: string;
+				duration: number;
+				description: string | null;
+				invite_calendar: string | null;
+				is_free_only: number;
+				price_inr: number | null;
+				price_min_inr: number | null;
+				price_max_inr: number | null;
+			}>();
 
 		if (!eventType) {
 			throw error(404, 'Consultation service not found or inactive');
@@ -164,7 +195,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					`SELECT etm.user_id 
 					 FROM event_type_members etm
 					 JOIN users u ON u.id = etm.user_id
-					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1
+					 WHERE etm.event_type_id = ? AND etm.is_active = 1 AND u.is_active = 1 AND COALESCE(u.is_deleted, 0) = 0
 					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC
 					 LIMIT 1`
 				)
@@ -175,9 +206,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		}
 
 		if (!hostUserId) {
-			// Fall back to any active member/owner
 			const fallbackUser = await db
-				.prepare('SELECT id FROM users WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1')
+				.prepare('SELECT id FROM users WHERE is_active = 1 AND COALESCE(is_deleted, 0) = 0 ORDER BY created_at ASC LIMIT 1')
 				.first<{ id: string }>();
 			hostUserId = fallbackUser?.id;
 		}
@@ -188,8 +218,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		const user = await db
 			.prepare(
-				`SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token 
-				 FROM users WHERE id = ? AND is_active = 1`
+				`SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token, session_pricing, is_free_consultation 
+				 FROM users WHERE id = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0`
 			)
 			.bind(hostUserId)
 			.first<{
@@ -201,9 +231,18 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				settings: string | null;
 				brand_color: string | null;
 				outlook_refresh_token: string | null;
+				session_pricing: any;
+				is_free_consultation: number | null;
 			}>();
 
 		if (!user) throw error(404, 'Selected consultant not found');
+
+		// Check member-level custom pricing override
+		const memberPricing = await db
+			.prepare('SELECT custom_pricing FROM event_type_members WHERE event_type_id = ? AND user_id = ? AND is_active = 1 LIMIT 1')
+			.bind(eventType.id, user.id)
+			.first<{ custom_pricing: string | null }>()
+			.catch(() => null);
 
 		// Parse user settings for global calendar defaults
 		let userSettings: { defaultInviteCalendar?: string } = {};
@@ -225,7 +264,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		const conflict = await db
 			.prepare(
 				`SELECT id FROM bookings
-				 WHERE user_id = ? AND status = 'confirmed'
+				 WHERE user_id = ? AND status = 'confirmed' AND COALESCE(is_deleted, 0) = 0
 				 AND (
 					(start_time <= ? AND end_time > ?)
 					OR (start_time < ? AND end_time >= ?)
@@ -239,101 +278,57 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			throw error(409, 'This time slot is no longer available. Please select another slot.');
 		}
 
-		// Create calendar event
-		let googleEventId: string | null = null;
-		let outlookEventId: string | null = null;
-		let meetingUrl: string | null = null;
-
-		const intakeDetailsText = [
-			goal ? `Goal: ${goal}` : null,
-			reason ? `Reason: ${reason}` : null,
-			expectations ? `Expectations: ${expectations}` : null,
-			attendeePhone ? `Mobile/WhatsApp: ${attendeePhone}` : null,
-			notes ? `Notes: ${notes}` : null
-		]
-			.filter(Boolean)
-			.join('\n\n');
-
-		const eventSummary = `Neubofy Consultation: ${eventType.name} - ${attendeeName}`;
-		const eventDescription = `Consultation with Neubofy Expert: ${user.name}\nClient: ${attendeeName} (${attendeeEmail})\nPhone: ${attendeePhone || 'Not provided'}\n\nClient Intake Information:\n${intakeDetailsText || 'None provided'}\n\nPlatform: booking.neubofy.in`;
-
-		if (inviteCalendar === 'google') {
+		// ==========================================
+		// PRICING WATERFALL COMPUTATION
+		// ==========================================
+		// 1. Base price resolution: custom member pricing -> expert session pricing -> eventType price
+		let basePrice = eventType.price_inr || 0;
+		if (memberPricing?.custom_pricing) {
 			try {
-				const accessToken = await getValidAccessToken(
-					db,
-					user.id,
-					env.GOOGLE_CLIENT_ID,
-					env.GOOGLE_CLIENT_SECRET
-				);
-
-				const calendarEvent = await createCalendarEvent(accessToken, {
-					summary: eventSummary,
-					description: eventDescription,
-					start: {
-						dateTime: startDateTime.toISOString(),
-						timeZone: 'UTC'
-					},
-					end: {
-						dateTime: endDateTime.toISOString(),
-						timeZone: 'UTC'
-					},
-					attendees: [{ email: attendeeEmail }],
-					conferenceData: {
-						createRequest: {
-							requestId: crypto.randomUUID(),
-							conferenceSolutionKey: { type: 'hangoutsMeet' }
-						}
+				const customPackages = typeof memberPricing.custom_pricing === 'string'
+					? JSON.parse(memberPricing.custom_pricing)
+					: memberPricing.custom_pricing;
+				if (Array.isArray(customPackages)) {
+					const pkg = customPackages.find((p: any) => Number(p.duration) === Number(durationMinutes));
+					if (pkg && typeof pkg.price === 'number') {
+						basePrice = pkg.price;
 					}
-				});
-
-				googleEventId = calendarEvent.id;
-				meetingUrl = calendarEvent.hangoutLink || null;
-			} catch (err) {
-				console.error('Error creating Google Calendar event:', err);
-			}
-		} else if (inviteCalendar === 'outlook' && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
-			try {
-				const outlookToken = await getValidOutlookAccessToken(
-					db,
-					user.id,
-					env.MICROSOFT_CLIENT_ID,
-					env.MICROSOFT_CLIENT_SECRET
-				);
-
-				const outlookEvent = await createOutlookCalendarEvent(outlookToken, {
-					summary: eventSummary,
-					description: eventDescription,
-					startTime: startDateTime.toISOString(),
-					endTime: endDateTime.toISOString(),
-					attendeeEmail,
-					hostEmail: user.email,
-					createTeamsMeeting: true
-				});
-
-				outlookEventId = outlookEvent.id;
-				if (outlookEvent.onlineMeeting?.joinUrl) {
-					meetingUrl = outlookEvent.onlineMeeting.joinUrl;
 				}
-			} catch (err) {
-				console.error('Error creating Outlook Calendar event:', err);
-			}
+			} catch {}
+		} else if (user.session_pricing) {
+			try {
+				const expertPackages = typeof user.session_pricing === 'string'
+					? JSON.parse(user.session_pricing)
+					: user.session_pricing;
+				if (Array.isArray(expertPackages)) {
+					const pkg = expertPackages.find((p: any) => Number(p.duration) === Number(durationMinutes));
+					if (pkg && typeof pkg.price === 'number') {
+						basePrice = pkg.price;
+					}
+				}
+			} catch {}
 		}
 
-		// Pricing & Coupon Verification
-		const isFreeOnly = Boolean(eventType.is_free_only);
-		const originalPrice = isFreeOnly ? 0 : (eventType.price_inr || 0);
-		let finalPrice = originalPrice;
+		// 2. Free session override (session-level is_free_only or expert is_free_consultation)
+		const isComplimentary = Boolean(eventType.is_free_only) || Boolean(user.is_free_consultation);
+		let finalPrice = isComplimentary ? 0 : basePrice;
 		let discountAmount = 0;
 		let validCouponCode: string | null = null;
 
-		if (!isFreeOnly && originalPrice > 0) {
+		// 3. Price Floor & Cap enforcement and Coupon Verification
+		const priceFloor = eventType.price_min_inr ?? 0;
+		const priceCeiling = eventType.price_max_inr ?? 99999;
+
+		if (!isComplimentary && finalPrice > 0) {
+			finalPrice = Math.max(priceFloor, Math.min(finalPrice, priceCeiling));
+
 			if (couponCode?.trim()) {
 				const cCode = couponCode.trim().toUpperCase();
 				const coupon = await db
 					.prepare(
 						`SELECT id, code, discount_type, discount_value, event_type_id, max_uses, used_count, expires_at
 						 FROM coupons
-						 WHERE UPPER(code) = ? AND is_active = 1`
+						 WHERE UPPER(code) = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0`
 					)
 					.bind(cCode)
 					.first<{
@@ -356,7 +351,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				}
 
 				if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
-					throw error(400, 'Coupon has reached its maximum limit.');
+					throw error(400, 'Coupon has reached its maximum usage limit.');
 				}
 
 				if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
@@ -364,22 +359,25 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				}
 
 				if (coupon.discount_type === 'percentage') {
-					discountAmount = Math.round((originalPrice * coupon.discount_value) / 100);
+					discountAmount = Math.round((finalPrice * coupon.discount_value) / 100);
 				} else {
 					discountAmount = coupon.discount_value;
 				}
-				discountAmount = Math.min(originalPrice, Math.max(0, discountAmount));
-				finalPrice = Math.max(0, originalPrice - discountAmount);
+
+				// Enforce price floor: coupon discount cannot reduce price below priceFloor
+				const rawDiscounted = Math.max(0, finalPrice - discountAmount);
+				finalPrice = Math.max(priceFloor, rawDiscounted);
+				discountAmount = basePrice - finalPrice;
 				validCouponCode = coupon.code;
 
-				// Atomically increment coupon usage
+				// Increment coupon usage count
 				await db
 					.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?')
 					.bind(coupon.id)
 					.run();
-			} else {
-				throw error(402, 'This consultation requires a valid coupon waiver code or payment.');
 			}
+		} else {
+			finalPrice = 0;
 		}
 
 		// Insert booking record into database
@@ -390,8 +388,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					id, organization_id, user_id, event_type_id, start_time, end_time, duration_minutes,
 					attendee_name, attendee_email, attendee_phone, attendee_notes, goal, reason, expectations,
 					price_amount, discount_amount, coupon_code, is_paid, email_verified, status,
-					google_event_id, outlook_event_id, meeting_url, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
+					created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', CURRENT_TIMESTAMP)`
 			)
 			.bind(
 				bookingId,
@@ -411,89 +409,45 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				finalPrice,
 				discountAmount,
 				validCouponCode,
-				finalPrice === 0 ? 1 : 0, // is_paid
-				isEmailVerified, // email_verified
-				googleEventId || null,
-				outlookEventId || null,
-				meetingUrl || null
+				finalPrice === 0 ? 1 : 0, // is_paid: 1 for free/waived, 0 for pending payment
+				isEmailVerified
 			)
 			.run();
 
-		// Invalidate availability cache (all duration variants for this date)
+		// Invalidate availability cache for this date
 		try {
 			const dateStr = startDateTime.toISOString().split('T')[0];
 			const prefix = `availability:${eventSlug}:${user.id}:`;
 			const listed = await env.KV?.list({ prefix });
 			if (listed?.keys) {
-				const keysToDelete = listed.keys.filter(k => k.name.endsWith(`:${dateStr}`));
-				await Promise.all(keysToDelete.map(k => env.KV?.delete(k.name)));
+				const keysToDelete = listed.keys.filter((k) => k.name.endsWith(`:${dateStr}`));
+				await Promise.all(keysToDelete.map((k) => env.KV?.delete(k.name)));
 			}
 		} catch {}
 
-		// Send booking confirmation email via Resend
-		const emailApiKey = env.RESEND_API_KEY;
-		if (emailApiKey) {
-			try {
-				let timeFormat: '12h' | '24h' = '12h';
-				try {
-					const settings = user.settings ? JSON.parse(user.settings) : {};
-					timeFormat = settings.timeFormat === '24h' ? '24h' : '12h';
-				} catch {}
-
-				const templates = await getEmailTemplates(db, user.id);
-				const emailConfig = await getOrganizationEmailConfig(db, user.id, env);
-				const confirmationEnabled = isEmailEnabled(templates, 'confirmation');
-
-				const emailData = {
-					attendeeName,
-					attendeeEmail,
-					eventName: eventType.name,
-					eventDescription: eventType.description || '',
-					startTime: startDateTime,
-					endTime: endDateTime,
-					meetingUrl,
-					meetingType: (inviteCalendar === 'outlook' ? 'teams' : 'google_meet') as 'google_meet' | 'teams',
-					bookingId,
-					hostName: user.name,
-					hostEmail: user.email,
-					hostContactEmail: user.contact_email || undefined,
-					appUrl: env.APP_URL || 'https://booking.neubofy.in',
-					timeFormat,
-					timezone: timezone || 'UTC',
-					brandColor: user.brand_color || '#3b82f6',
-					attendeeNotes: intakeDetailsText || notes || undefined
-				};
-
-				if (confirmationEnabled) {
-					const template = templates.get('confirmation');
-					await sendBookingEmail(
-						{
-							...emailData,
-							customMessage: template?.custom_message
-						},
-						{
-							apiKey: emailApiKey,
-							from: emailConfig.from,
-							replyTo: emailConfig.replyTo
-						},
-						template?.subject || undefined
-					);
-				}
-
-				// Send notification to expert host
-				await sendAdminNotificationEmail(emailData, user.contact_email || user.email, {
-					apiKey: emailApiKey,
-					from: emailConfig.from
-				});
-			} catch (emailError) {
-				console.error('Failed to send confirmation email:', emailError);
-			}
+		// If booking requires payment: redirect to interim UPI payment page
+		if (finalPrice > 0) {
+			return json({
+				success: true,
+				bookingId,
+				requiresPayment: true,
+				paymentUrl: `/payment/${bookingId}`,
+				amountDue: finalPrice,
+				expertName: user.name,
+				serviceName: eventType.name,
+				startTime,
+				endTime
+			});
 		}
+
+		// Otherwise, for free/complimentary consultations, provision calendar and send emails immediately
+		const finalResult = await finalizeConfirmedBooking(db, env, bookingId);
 
 		return json({
 			success: true,
 			bookingId,
-			meetingUrl,
+			requiresPayment: false,
+			meetingUrl: finalResult.meetingUrl,
 			meetingType: inviteCalendar === 'outlook' ? 'teams' : 'google_meet',
 			expertName: user.name,
 			serviceName: eventType.name,
