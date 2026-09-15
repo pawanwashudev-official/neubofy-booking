@@ -90,14 +90,13 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			await db
 				.prepare(
 					`INSERT INTO users (id, email, name, slug, google_refresh_token, is_active, last_login_at, created_at)
-					VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+					VALUES (?, ?, ?, ?, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 				)
 				.bind(
 					userId,
 					normalizedEmail,
 					userInfo.name,
-					slug,
-					tokens.refresh_token || null
+					slug
 				)
 				.run();
 
@@ -160,14 +159,12 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 			await db
 				.prepare(
 					`UPDATE users
-					SET google_refresh_token = COALESCE(?, google_refresh_token),
-						email = ?,
+					SET email = ?,
 						name = ?,
 						last_login_at = CURRENT_TIMESTAMP
 					WHERE id = ?`
 				)
 				.bind(
-					tokens.refresh_token || null,
 					normalizedEmail,
 					userInfo.name,
 					user.id
