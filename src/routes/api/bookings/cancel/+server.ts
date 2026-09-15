@@ -6,7 +6,6 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getCurrentUser } from '$lib/server/auth';
 import { cancelCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { cancelOutlookCalendarEvent, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
 import { sendCancellationEmail, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled } from '$lib/server/email';
 
 export const POST = async (event: RequestEvent) => {
@@ -95,33 +94,12 @@ export const POST = async (event: RequestEvent) => {
 			}
 		}
 
-		// Cancel in Outlook Calendar if event exists
-		if (booking.outlook_event_id && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
-			try {
-				const outlookToken = await getValidOutlookAccessToken(
-					db,
-					booking.user_id,
-					env.MICROSOFT_CLIENT_ID,
-					env.MICROSOFT_CLIENT_SECRET
-				);
-				await cancelOutlookCalendarEvent(outlookToken, booking.outlook_event_id);
-			} catch (err) {
-				console.error('Failed to cancel Outlook Calendar event:', err);
-				// Continue with database cancellation even if Outlook Calendar fails
-			}
-		}
-
 		// Update booking status
 		await db
 			.prepare('UPDATE bookings SET status = ?, canceled_at = CURRENT_TIMESTAMP, canceled_by = ?, cancellation_reason = ? WHERE id = ?')
 			.bind('canceled', 'host', message || null, bookingId)
 			.run();
 
-		// Cancel any scheduled reminder emails
-		await db
-			.prepare(`UPDATE scheduled_emails SET status = 'cancelled' WHERE booking_id = ? AND status = 'pending'`)
-			.bind(bookingId)
-			.run();
 
 		// Send cancellation email if enabled
 		if (env.RESEND_API_KEY) {

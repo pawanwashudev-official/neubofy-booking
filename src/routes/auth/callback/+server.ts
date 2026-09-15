@@ -139,21 +139,21 @@ export const GET: RequestHandler = async ({ url, platform, cookies }) => {
 				} catch {}
 			}
 
-			// Auto-heal membership if missing
-			if (!membership) {
+			// Only bootstrap if the user matches the configured owner email
+			if (!membership && ownerEmail && normalizedEmail === ownerEmail) {
 				try {
 					const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
 					if (org) {
 						await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
-							.bind(org.id, user.id, normalizedEmail === ownerEmail ? 'owner' : 'admin').run();
-						membership = { id: 'auto_healed' };
+							.bind(org.id, user.id, 'owner').run();
+						membership = { id: 'owner_membership' };
 					}
-				} catch (eHeal) {
-					console.error('Auto-heal membership error:', eHeal);
+				} catch (eOwner) {
+					console.error('Owner bootstrap membership error:', eOwner);
 				}
 			}
 
-			if (!membership && (!ownerEmail || normalizedEmail !== ownerEmail)) {
+			if (!membership) {
 				throw error(403, 'You do not have an active organization membership.');
 			}
 

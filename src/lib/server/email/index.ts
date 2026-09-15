@@ -19,8 +19,6 @@ export {
 	generateAdminCancellationEmail,
 	generateRescheduleEmail,
 	generateAdminRescheduleEmail,
-	generateReminderEmail,
-	getDefaultReminderSubject,
 	generateAdminNotificationEmail
 } from './templates';
 
@@ -33,8 +31,6 @@ import {
 	generateAdminCancellationEmail,
 	generateRescheduleEmail,
 	generateAdminRescheduleEmail,
-	generateReminderEmail,
-	getDefaultReminderSubject,
 	generateAdminNotificationEmail
 } from './templates';
 
@@ -49,7 +45,6 @@ export interface EmailConfig {
 
 export type EmailPurpose =
 	| 'booking'
-	| 'reminder'
 	| 'reschedule'
 	| 'cancellation'
 	| 'otp'
@@ -68,10 +63,6 @@ export function getSenderEmail(purpose: EmailPurpose, baseFrom?: string, hostOrO
 		case 'otp':
 			mailbox = 'otp';
 			displayName = 'Neubofy Security';
-			break;
-		case 'reminder':
-			mailbox = 'reminders';
-			displayName = 'Neubofy Reminders';
 			break;
 		case 'reschedule':
 			mailbox = 'scheduling';
@@ -122,7 +113,6 @@ export function getReplyToEmail(purpose: EmailPurpose, customReplyTo?: string): 
 		case 'invitation':
 			return 'contact@neubofy.in';
 		case 'booking':
-		case 'reminder':
 		case 'reschedule':
 		default:
 			return 'meet@neubofy.in';
@@ -295,45 +285,6 @@ export async function sendRescheduleEmail(
 	}
 }
 
-/**
- * Send reminder email
- */
-export async function sendReminderEmail(
-	data: BookingEmailData,
-	reminderType: 'reminder_24h' | 'reminder_1h' | 'reminder_30m',
-	config: EmailConfig & { replyTo: string },
-	customSubject?: string
-): Promise<void> {
-	const htmlBody = generateReminderEmail(data, reminderType);
-	const subject = customSubject
-		? replaceSubjectVariables(customSubject, data)
-		: getDefaultReminderSubject(data, reminderType);
-
-	try {
-		const response = await fetch('https://api.resend.com/emails', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${config.apiKey}`
-			},
-			body: JSON.stringify({
-				from: getSenderEmail('reminder', config.from, data.hostName),
-				to: data.attendeeEmail,
-				reply_to: getReplyToEmail('reminder', config.replyTo),
-				subject,
-				html: htmlBody
-			})
-		});
-
-		if (!response.ok) {
-			const error = await response.text();
-			throw new Error(`Failed to send reminder email: ${error}`);
-		}
-	} catch (error) {
-		console.error('Reminder email error:', error);
-		throw error;
-	}
-}
 
 /**
  * Send admin notification email when a booking is made

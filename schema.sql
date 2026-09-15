@@ -6,10 +6,8 @@
 DROP VIEW IF EXISTS active_event_types;
 DROP VIEW IF EXISTS upcoming_bookings;
 
-DROP TABLE IF EXISTS scheduled_emails;
 DROP TABLE IF EXISTS reschedule_proposals;
 DROP TABLE IF EXISTS email_templates;
-DROP TABLE IF EXISTS email_verifications;
 DROP TABLE IF EXISTS coupons;
 DROP TABLE IF EXISTS bookings;
 DROP TABLE IF EXISTS date_overrides;
@@ -121,7 +119,6 @@ CREATE TABLE event_types (
     color TEXT DEFAULT '#3b82f6',
     description TEXT,
     category TEXT DEFAULT 'Decide', -- Decide, Implement, Improve, Protect & Verify, Operate
-    is_free_only BOOLEAN DEFAULT 1, -- 1 = Complimentary (100% Free), 0 = Paid consultation
     price_inr INTEGER DEFAULT 0, -- Base price in INR
     durations_json TEXT DEFAULT '[30, 60]', -- Supported duration options in minutes
     icon_name TEXT DEFAULT 'lightbulb',
@@ -211,6 +208,7 @@ CREATE TABLE bookings (
     coupon_code TEXT, -- Applied promo/waiver coupon
     is_paid BOOLEAN DEFAULT 1, -- 1 for complimentary or paid bookings
     email_verified BOOLEAN DEFAULT 1,
+    client_firebase_uid TEXT,
     google_event_id TEXT,
     outlook_event_id TEXT,
     meeting_url TEXT,
@@ -228,6 +226,8 @@ CREATE INDEX idx_bookings_user_time ON bookings(user_id, start_time);
 CREATE INDEX idx_bookings_org ON bookings(organization_id, status);
 CREATE INDEX idx_bookings_event_type ON bookings(event_type_id);
 CREATE INDEX idx_bookings_status ON bookings(status);
+CREATE INDEX idx_bookings_client ON bookings(client_firebase_uid);
+CREATE INDEX idx_bookings_attendee_email ON bookings(attendee_email);
 
 -- 11. Promotional Coupons & Complimentary Waivers
 CREATE TABLE coupons (
@@ -251,27 +251,11 @@ CREATE TABLE coupons (
 CREATE INDEX idx_coupons_code ON coupons(code);
 CREATE INDEX idx_coupons_org ON coupons(organization_id, is_active);
 
--- 12. Email OTP verification challenges
-CREATE TABLE email_verifications (
-    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    email TEXT NOT NULL,
-    otp_code TEXT NOT NULL,
-    token TEXT UNIQUE,
-    expires_at DATETIME NOT NULL,
-    verified_at DATETIME,
-    attempts INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_email_verif_email ON email_verifications(email, otp_code);
-CREATE INDEX idx_email_verif_token ON email_verifications(token);
-
--- 13. Email templates & custom notifications
 CREATE TABLE email_templates (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     user_id TEXT NOT NULL,
     organization_id TEXT NOT NULL DEFAULT 'org_neubofy_main',
-    template_type TEXT NOT NULL CHECK (template_type IN ('confirmation', 'cancellation', 'reschedule', 'reminder_24h', 'reminder_1h', 'reminder_30m')),
+    template_type TEXT NOT NULL CHECK (template_type IN ('confirmation', 'cancellation', 'reschedule')),
     is_enabled BOOLEAN DEFAULT 1,
     subject TEXT,
     custom_message TEXT,
@@ -282,22 +266,6 @@ CREATE TABLE email_templates (
 );
 
 CREATE INDEX idx_email_templates_user ON email_templates(user_id);
-
--- 14. Scheduled emails for reminders
-CREATE TABLE scheduled_emails (
-    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    booking_id TEXT NOT NULL,
-    template_type TEXT NOT NULL,
-    scheduled_for DATETIME NOT NULL,
-    sent_at DATETIME,
-    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'cancelled')),
-    error_message TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_scheduled_emails_pending ON scheduled_emails(status, scheduled_for);
-CREATE INDEX idx_scheduled_emails_booking ON scheduled_emails(booking_id);
 
 -- 15. Host reschedule proposals
 CREATE TABLE reschedule_proposals (
@@ -365,7 +333,7 @@ INSERT INTO organizations (
 -- 2. Core Consultation Services
 INSERT INTO event_types (
     id, organization_id, name, slug, duration_minutes,
-    description, category, is_free_only, price_inr,
+    description, category, price_inr,
     durations_json, icon_name, location_type, is_active
 ) VALUES 
 (
@@ -376,7 +344,6 @@ INSERT INTO event_types (
     30,
     'High-impact 30-minute strategic evaluation of your technical architecture, product roadmap, or engineering challenges with a Neubofy lead specialist.',
     'Decide',
-    1,
     0,
     '[30, 60]',
     'lightbulb',
@@ -391,7 +358,6 @@ INSERT INTO event_types (
     60,
     'Comprehensive 60-minute technical consultation: codebase assessment, Cloudflare/AWS cloud architecture review, and system scaling strategy.',
     'Implement',
-    1,
     0,
     '[30, 60]',
     'cpu',
@@ -406,7 +372,6 @@ INSERT INTO event_types (
     45,
     'In-depth audit covering security vulnerabilities, dead code elimination, infrastructure efficiency, and production readiness verification.',
     'Protect & Verify',
-    1,
     0,
     '[30, 45, 60]',
     'shield',

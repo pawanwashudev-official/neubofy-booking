@@ -208,6 +208,16 @@
 						</a>
 
 						<a
+							href="/dashboard/clients"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/clients')
+								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>💼</span>
+							<span>Clients Directory</span>
+						</a>
+
+						<a
 							href="/dashboard/organization"
 							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/organization')
 								? 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.4)]'
@@ -326,6 +336,16 @@
 						>
 							<span>👤</span>
 							<span>Profile & Session Rates</span>
+						</a>
+
+						<a
+							href="/dashboard/clients"
+							class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all {$page.url.pathname.startsWith('/dashboard/clients')
+								? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
+								: 'text-zinc-400 hover:text-white hover:bg-white/5'}"
+						>
+							<span>💼</span>
+							<span>My Clients</span>
 						</a>
 					</nav>
 

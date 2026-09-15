@@ -9,7 +9,6 @@ name: Deploy to Cloudflare
       - 'src/**'
       - 'static/**'
       - 'scripts/**'
-      - 'workers/**'
       - 'functions/**'
       - 'migrations/**'
       - 'schema.sql'
@@ -33,7 +32,6 @@ name: Deploy to Cloudflare
           - all
           - pages
           - database
-          - cron_worker
 
 concurrency:
   group: production-deployment
@@ -50,7 +48,6 @@ jobs:
     outputs:
       pages: ${{ steps.components.outputs.pages }}
       database: ${{ steps.components.outputs.database }}
-      cron_worker: ${{ steps.components.outputs.cron_worker }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -78,9 +75,6 @@ jobs:
               - 'migrations/**'
               - 'schema.sql'
               - '.github/workflows/deploy.yml'
-            cron_worker:
-              - 'workers/**'
-              - '.github/workflows/deploy.yml'
 
       - name: Resolve Deploy Targets
         id: components
@@ -98,16 +92,10 @@ jobs:
             else
               echo "database=false" >> "$GITHUB_OUTPUT"
             fi
-            if [ "$TARGET" = "all" ] || [ "$TARGET" = "cron_worker" ]; then
-              echo "cron_worker=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "cron_worker=false" >> "$GITHUB_OUTPUT"
-            fi
           else
             echo "Auto push detection:"
             echo "pages=${{ steps.filter.outputs.pages }}" >> "$GITHUB_OUTPUT"
             echo "database=${{ steps.filter.outputs.database }}" >> "$GITHUB_OUTPUT"
-            echo "cron_worker=${{ steps.filter.outputs.cron_worker }}" >> "$GITHUB_OUTPUT"
           fi
 
   # --------------------------------------------------------------------------
@@ -199,10 +187,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
           ORGANIZATION_OWNER_EMAIL: ${{ secrets.ORGANIZATION_OWNER_EMAIL }}
-          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
-          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
         run: |
           cat >> wrangler.toml << EOF
 
@@ -212,45 +197,7 @@ jobs:
           GOOGLE_CLIENT_SECRET = "$GOOGLE_CLIENT_SECRET"
           JWT_SECRET = "$JWT_SECRET"
           RESEND_API_KEY = "$RESEND_API_KEY"
-          CRON_SECRET = "$CRON_SECRET"
-          MICROSOFT_CLIENT_ID = "$MICROSOFT_CLIENT_ID"
-          MICROSOFT_CLIENT_SECRET = "$MICROSOFT_CLIENT_SECRET"
           ORGANIZATION_OWNER_EMAIL = "$ORGANIZATION_OWNER_EMAIL"
           EOF
 
           npx wrangler pages deploy .svelte-kit/cloudflare --project-name=neubofy-booking --commit-dirty=true
-
-  # --------------------------------------------------------------------------
-  # 4. CLOUDFLARE CRON WORKER DEPLOY JOB
-  # Runs ONLY when workers/ directory changes.
-  # --------------------------------------------------------------------------
-  deploy-cron:
-    name: Deploy Cron Worker
-    needs: detect-changes
-    if: needs.detect-changes.outputs.cron_worker == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Deploy Cron Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          APP_URL: ${{ secrets.APP_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          cd workers/cron-reminders
-          npx wrangler deploy
-          echo "$APP_URL" | npx wrangler secret put APP_URL
-          echo "$CRON_SECRET" | npx wrangler secret put CRON_SECRET
-          echo "Cron worker deployed with 5-minute reminder schedule."

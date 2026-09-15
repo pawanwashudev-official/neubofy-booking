@@ -6,35 +6,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createCalendarEvent, getValidAccessToken } from '$lib/server/google-calendar';
-import { createOutlookCalendarEvent, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
 import { sendBookingEmail, sendAdminNotificationEmail, getEmailTemplates, getOrganizationEmailConfig, isEmailEnabled, type EmailTemplateType } from '$lib/server/email';
 import { isValidEmail, validateLength, validateFields, MAX_LENGTHS } from '$lib/server/validation';
 
-async function verifyOtpToken(token: string, secret: string, email: string): Promise<boolean> {
-	try {
-		const [data, signature] = token.split('.');
-		if (!data || !signature) return false;
-
-		const encoder = new TextEncoder();
-		const keyData = encoder.encode(`${data}.${secret}`);
-		const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
-		const hashArray = Array.from(new Uint8Array(hashBuffer));
-		const expectedSignature = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-
-		if (signature !== expectedSignature) return false;
-
-		const payload = JSON.parse(atob(data));
-		if (payload.email?.toLowerCase() !== email.toLowerCase()) return false;
-
-		// Token valid for 30 minutes
-		const age = Date.now() - payload.verifiedAt;
-		if (age > 30 * 60 * 1000) return false;
-
-		return true;
-	} catch {
-		return false;
-	}
-}
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const env = platform?.env;
@@ -57,7 +31,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			expectations?: string;
 			notes?: string;
 			couponCode?: string;
-			verificationToken?: string;
+			clientFirebaseUid?: string;
 			turnstileToken?: string;
 			timezone?: string;
 		};
@@ -76,7 +50,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			expectations,
 			notes,
 			couponCode,
-			verificationToken,
+			clientFirebaseUid,
 			turnstileToken,
 			timezone
 		} = body;
@@ -91,19 +65,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			throw error(400, 'Invalid email address');
 		}
 
-		// Email OTP Verification check
-		let isEmailVerified = 1;
-		const secret = env.JWT_SECRET;
-		if (!secret) {
-			throw error(500, 'Server configuration error: JWT_SECRET is not set');
-		}
-		if (verificationToken) {
-			const isValid = await verifyOtpToken(verificationToken, secret, attendeeEmail);
-			if (!isValid) {
-				throw error(400, 'Invalid or expired email verification code. Please verify again.');
-			}
-			isEmailVerified = 1;
-		}
 
 		// Validate input lengths
 		const lengthError = validateFields([
@@ -188,7 +149,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 		const user = await db
 			.prepare(
-				`SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token 
+				`SELECT id, email, name, slug, contact_email, settings, brand_color, outlook_refresh_token, session_pricing, is_free_consultation 
 				 FROM users WHERE id = ? AND is_active = 1`
 			)
 			.bind(hostUserId)
@@ -201,6 +162,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				settings: string | null;
 				brand_color: string | null;
 				outlook_refresh_token: string | null;
+				session_pricing: string | null;
+				is_free_consultation: number | null;
 			}>();
 
 		if (!user) throw error(404, 'Selected consultant not found');
@@ -291,95 +254,80 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			} catch (err) {
 				console.error('Error creating Google Calendar event:', err);
 			}
-		} else if (inviteCalendar === 'outlook' && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
+		}
+
+		// Pricing & Coupon Verification (Expert-driven pricing with organization-level coupons)
+		let originalPrice = eventType.price_inr || 0;
+		if (user.session_pricing) {
 			try {
-				const outlookToken = await getValidOutlookAccessToken(
-					db,
-					user.id,
-					env.MICROSOFT_CLIENT_ID,
-					env.MICROSOFT_CLIENT_SECRET
-				);
-
-				const outlookEvent = await createOutlookCalendarEvent(outlookToken, {
-					summary: eventSummary,
-					description: eventDescription,
-					startTime: startDateTime.toISOString(),
-					endTime: endDateTime.toISOString(),
-					attendeeEmail,
-					hostEmail: user.email,
-					createTeamsMeeting: true
-				});
-
-				outlookEventId = outlookEvent.id;
-				if (outlookEvent.onlineMeeting?.joinUrl) {
-					meetingUrl = outlookEvent.onlineMeeting.joinUrl;
+				const tiers = JSON.parse(user.session_pricing) as Array<{ duration: number; price: number }>;
+				const matchedTier = tiers.find(t => Number(t.duration) === Number(durationMinutes)) || tiers[0];
+				if (matchedTier && typeof matchedTier.price === 'number') {
+					originalPrice = matchedTier.price;
 				}
-			} catch (err) {
-				console.error('Error creating Outlook Calendar event:', err);
+			} catch (e) {
+				console.error('[bookings:create] Failed to parse expert session_pricing:', e);
 			}
 		}
 
-		// Pricing & Coupon Verification
-		const isFreeOnly = Boolean(eventType.is_free_only);
-		const originalPrice = isFreeOnly ? 0 : (eventType.price_inr || 0);
 		let finalPrice = originalPrice;
 		let discountAmount = 0;
 		let validCouponCode: string | null = null;
 
-		if (!isFreeOnly && originalPrice > 0) {
-			if (couponCode?.trim()) {
-				const cCode = couponCode.trim().toUpperCase();
-				const coupon = await db
-					.prepare(
-						`SELECT id, code, discount_type, discount_value, event_type_id, max_uses, used_count, expires_at
-						 FROM coupons
-						 WHERE UPPER(code) = ? AND is_active = 1`
-					)
-					.bind(cCode)
-					.first<{
-						id: string;
-						code: string;
-						discount_type: 'percentage' | 'fixed';
-						discount_value: number;
-						event_type_id: string | null;
-						max_uses: number | null;
-						used_count: number;
-						expires_at: string | null;
-					}>();
+		if (couponCode?.trim()) {
+			const cCode = couponCode.trim().toUpperCase();
+			const coupon = await db
+				.prepare(
+					`SELECT id, code, discount_type, discount_value, event_type_id, max_uses, used_count, expires_at
+					 FROM coupons
+					 WHERE UPPER(code) = ? AND is_active = 1`
+				)
+				.bind(cCode)
+				.first<{
+					id: string;
+					code: string;
+					discount_type: 'percentage' | 'fixed';
+					discount_value: number;
+					event_type_id: string | null;
+					max_uses: number | null;
+					used_count: number;
+					expires_at: string | null;
+				}>();
 
-				if (!coupon) {
-					throw error(400, 'Invalid coupon code.');
-				}
-
-				if (coupon.event_type_id && coupon.event_type_id !== eventType.id) {
-					throw error(400, 'Coupon is not valid for this consultation service.');
-				}
-
-				if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
-					throw error(400, 'Coupon has reached its maximum limit.');
-				}
-
-				if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
-					throw error(400, 'Coupon code has expired.');
-				}
-
-				if (coupon.discount_type === 'percentage') {
-					discountAmount = Math.round((originalPrice * coupon.discount_value) / 100);
-				} else {
-					discountAmount = coupon.discount_value;
-				}
-				discountAmount = Math.min(originalPrice, Math.max(0, discountAmount));
-				finalPrice = Math.max(0, originalPrice - discountAmount);
-				validCouponCode = coupon.code;
-
-				// Atomically increment coupon usage
-				await db
-					.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?')
-					.bind(coupon.id)
-					.run();
-			} else {
-				throw error(402, 'This consultation requires a valid coupon waiver code or payment.');
+			if (!coupon) {
+				throw error(400, 'Invalid coupon code.');
 			}
+
+			if (coupon.event_type_id && coupon.event_type_id !== eventType.id) {
+				throw error(400, 'Coupon is not valid for this consultation service.');
+			}
+
+			if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
+				throw error(400, 'Coupon has reached its maximum limit.');
+			}
+
+			if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+				throw error(400, 'Coupon code has expired.');
+			}
+
+			if (coupon.discount_type === 'percentage') {
+				discountAmount = Math.round((originalPrice * coupon.discount_value) / 100);
+			} else {
+				discountAmount = coupon.discount_value;
+			}
+			discountAmount = Math.min(originalPrice, Math.max(0, discountAmount));
+			finalPrice = Math.max(0, originalPrice - discountAmount);
+			validCouponCode = coupon.code;
+
+			// Atomically increment coupon usage
+			await db
+				.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?')
+				.bind(coupon.id)
+				.run();
+		} else if (originalPrice > 0) {
+			// No coupon provided for a paid consultation
+			// Since payment gateway is not yet connected, indicate coupon requirement or pending status
+			throw error(402, 'This consultation requires a coupon code (e.g. NEUBOFYVIP for 100% off waiver).');
 		}
 
 		// Insert booking record into database
@@ -389,9 +337,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				`INSERT INTO bookings (
 					id, organization_id, user_id, event_type_id, start_time, end_time, duration_minutes,
 					attendee_name, attendee_email, attendee_phone, attendee_notes, goal, reason, expectations,
-					price_amount, discount_amount, coupon_code, is_paid, email_verified, status,
+					price_amount, discount_amount, coupon_code, is_paid, email_verified, client_firebase_uid, status,
 					google_event_id, outlook_event_id, meeting_url, created_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'confirmed', ?, ?, ?, CURRENT_TIMESTAMP)`
 			)
 			.bind(
 				bookingId,
@@ -411,8 +359,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				finalPrice,
 				discountAmount,
 				validCouponCode,
-				finalPrice === 0 ? 1 : 0, // is_paid
-				isEmailVerified, // email_verified
+				finalPrice === 0 ? 1 : 0, // is_paid: 1 when bill is 0!
+				clientFirebaseUid || null,
 				googleEventId || null,
 				outlookEventId || null,
 				meetingUrl || null
@@ -428,7 +376,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				const keysToDelete = listed.keys.filter(k => k.name.endsWith(`:${dateStr}`));
 				await Promise.all(keysToDelete.map(k => env.KV?.delete(k.name)));
 			}
-		} catch {}
+		} catch (kvErr) {
+			console.error('[bookings:create] KV cache invalidation error:', kvErr instanceof Error ? kvErr.message : kvErr);
+		}
 
 		// Send booking confirmation email via Resend
 		const emailApiKey = env.RESEND_API_KEY;
@@ -438,7 +388,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				try {
 					const settings = user.settings ? JSON.parse(user.settings) : {};
 					timeFormat = settings.timeFormat === '24h' ? '24h' : '12h';
-				} catch {}
+				} catch (parseErr) {
+					console.warn('[bookings:create] Could not parse user timeFormat setting:', parseErr);
+				}
 
 				const templates = await getEmailTemplates(db, user.id);
 				const emailConfig = await getOrganizationEmailConfig(db, user.id, env);

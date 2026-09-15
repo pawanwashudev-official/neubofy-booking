@@ -27,9 +27,8 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 				.prepare(
 					`SELECT et.id, et.slug, et.name, et.duration_minutes as duration, et.durations_json,
 						et.description, et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
-						et.is_free_only, et.price_inr, et.category,
-						u.name as host_name, u.email as host_email, u.settings as host_settings,
-						u.outlook_refresh_token
+						et.price_inr, et.category,
+						u.name as host_name, u.email as host_email, u.settings as host_settings
 					 FROM event_types et
 					 LEFT JOIN users u ON u.id = et.user_id
 					 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main')
@@ -44,8 +43,7 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 					.prepare(
 						`SELECT et.id, et.slug, et.name, et.duration_minutes as duration,
 							et.description, et.is_active, et.cover_image, et.invite_calendar, et.user_id as host_user_id,
-							u.name as host_name, u.email as host_email, u.settings as host_settings,
-							u.outlook_refresh_token
+							u.name as host_name, u.email as host_email, u.settings as host_settings
 						 FROM event_types et
 						 LEFT JOIN users u ON u.id = et.user_id
 						 WHERE (et.organization_id = ? OR et.organization_id IS NULL OR et.organization_id = 'org_neubofy_main')
@@ -55,13 +53,12 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 					.bind(organization.id, params.slug)
 					.first();
 				if (eventType) {
-					eventType.is_free_only = 1;
 					eventType.price_inr = 0;
 					eventType.category = 'Consultation';
 					eventType.durations_json = `[${eventType.duration || 30}]`;
 				}
 			} catch (e2) {
-				console.error('Failed to query eventType:', e2);
+				console.error('[slug:load] Failed to query eventType:', e2);
 			}
 		}
 
@@ -86,7 +83,9 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 				let parsedPricing = [];
 				try {
 					parsedPricing = exp.session_pricing ? JSON.parse(exp.session_pricing) : [];
-				} catch {}
+				} catch (errPricing) {
+					console.warn('[slug:load] Failed to parse expert pricing:', errPricing);
+				}
 				return {
 					...exp,
 					session_pricing: parsedPricing
@@ -108,10 +107,14 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 					let parsedPricing = [];
 					try {
 						parsedPricing = creator.session_pricing ? JSON.parse(creator.session_pricing) : [];
-					} catch {}
+					} catch (errCreatorPricing) {
+						console.warn('[slug:load] Failed to parse creator pricing:', errCreatorPricing);
+					}
 					assignedExperts = [{ ...creator, session_pricing: parsedPricing }];
 				}
-			} catch {}
+			} catch (errCreator) {
+				console.warn('[slug:load] Failed to load creator expert:', errCreator);
+			}
 		}
 
 		// Fallback to first active user if still empty
@@ -124,10 +127,14 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 					let parsedPricing = [];
 					try {
 						parsedPricing = anyUser.session_pricing ? JSON.parse(anyUser.session_pricing) : [];
-					} catch {}
+					} catch (errAnyPricing) {
+						console.warn('[slug:load] Failed to parse anyUser pricing:', errAnyPricing);
+					}
 					assignedExperts = [{ ...anyUser, session_pricing: parsedPricing }];
 				}
-			} catch {}
+			} catch (errAny) {
+				console.warn('[slug:load] Failed to load fallback user:', errAny);
+			}
 		}
 
 		// Absolute fallback to ensure booking page always renders even if database is fresh
@@ -185,7 +192,6 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 				description: eventType.description,
 				category: eventType.category || 'Decide',
 				is_active: eventType.is_active,
-				is_free_only: !!eventType.is_free_only,
 				price_inr: eventType.price_inr || 0,
 				cover_image: eventType.cover_image,
 				invite_calendar: effectiveInviteCalendar

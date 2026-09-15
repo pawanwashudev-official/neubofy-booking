@@ -116,11 +116,6 @@ export const actions: Actions = {
 				.bind('canceled', 'attendee', reason, bookingId)
 				.run();
 
-			// Cancel any scheduled reminder emails
-			await db
-				.prepare(`UPDATE scheduled_emails SET status = 'cancelled' WHERE booking_id = ? AND status = 'pending'`)
-				.bind(bookingId)
-				.run();
 
 			// Send cancellation email if enabled
 			if (env.RESEND_API_KEY) {

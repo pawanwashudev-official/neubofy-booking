@@ -10,7 +10,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getBusyTimes, getValidAccessToken } from '$lib/server/google-calendar';
-import { getOutlookBusyTimes, getValidOutlookAccessToken } from '$lib/server/outlook-calendar';
 
 interface TimeSlot {
 	start: string;
@@ -184,19 +183,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 			} catch (err) {
 				// Continue if calendar not connected yet
 			}
-		}
-
-		if (useOutlookCalendar && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
-			try {
-				const outlookToken = await getValidOutlookAccessToken(
-					db,
-					user.id,
-					env.MICROSOFT_CLIENT_ID,
-					env.MICROSOFT_CLIENT_SECRET
-				);
-				const outlookBusy = await getOutlookBusyTimes(outlookToken, startOfDay, endOfDay);
-				busySlots.push(...outlookBusy);
-			} catch {}
 		}
 
 		// Query existing confirmed bookings for this expert

@@ -30,7 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	const eventType = await db
 		.prepare(
 			`SELECT id, user_id, name, slug, duration_minutes as duration, durations_json,
-			        description, category, is_active, is_free_only, price_inr, cover_image
+			        description, category, is_active, price_inr, cover_image
 			 FROM event_types
 			 WHERE id = ? OR slug = ?`
 		)
@@ -45,7 +45,6 @@ export const load: PageServerLoad = async (event) => {
 			description: string | null;
 			category: string | null;
 			is_active: number;
-			is_free_only: number;
 			price_inr: number | null;
 			cover_image: string | null;
 		}>();
@@ -161,7 +160,7 @@ export const actions: Actions = {
 				.prepare(
 					`UPDATE event_types
 					 SET name = ?, slug = ?, duration_minutes = ?, durations_json = ?,
-					     category = ?, description = ?, is_active = ?, is_free_only = ?, price_inr = ?
+					     category = ?, description = ?, is_active = ?, price_inr = ?
 					 WHERE id = ?`
 				)
 				.bind(
@@ -172,7 +171,6 @@ export const actions: Actions = {
 					category,
 					description,
 					isActive,
-					isFreeOnly,
 					priceInr,
 					existing.id
 				)

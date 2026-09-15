@@ -104,9 +104,9 @@ export const actions: Actions = {
 				.prepare(
 					`INSERT INTO event_types (
 						id, organization_id, user_id, name, slug, duration_minutes,
-						durations_json, category, description, is_active, is_free_only, price_inr,
+						durations_json, category, description, is_active, price_inr,
 						location_type, created_at
-					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google_meet', CURRENT_TIMESTAMP)`
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google_meet', CURRENT_TIMESTAMP)`
 				)
 				.bind(
 					eventTypeId,
@@ -119,7 +119,6 @@ export const actions: Actions = {
 					category,
 					description,
 					isActive,
-					isFreeOnly,
 					priceInr
 				)
 				.run();

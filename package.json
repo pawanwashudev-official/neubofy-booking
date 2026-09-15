@@ -1,7 +1,7 @@
 {
   "name": "neubofy-booking",
   "version": "1.0.0",
-  "description": "Neubofy booking system for scheduling meetings on Cloudflare with Google Calendar and Outlook sync.",
+  "description": "Neubofy booking system for scheduling strategy consultations on Cloudflare with Google Calendar and Google Meet.",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -45,6 +45,7 @@
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/typography": "^0.5.19",
     "autoprefixer": "^10.4.21",
+    "firebase": "^12.19.0",
     "isomorphic-dompurify": "^2.18.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",

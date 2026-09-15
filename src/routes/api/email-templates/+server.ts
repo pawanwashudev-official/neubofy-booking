@@ -33,18 +33,6 @@ const DEFAULT_TEMPLATES = [
 		name: 'Reschedule Confirmation',
 		description: 'Sent when a meeting is rescheduled',
 		default_subject: 'Meeting Rescheduled: {event_name} with {host_name}'
-	},
-	{
-		template_type: 'reminder_24h',
-		name: '24 Hour Reminder',
-		description: 'Sent 24 hours before the meeting',
-		default_subject: 'Reminder: {event_name} tomorrow with {host_name}'
-	},
-	{
-		template_type: 'reminder_1h',
-		name: '1 Hour Reminder',
-		description: 'Sent 1 hour before the meeting',
-		default_subject: 'Reminder: {event_name} starts in 1 hour'
 	}
 ];
 

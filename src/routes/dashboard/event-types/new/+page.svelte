@@ -9,8 +9,7 @@
 	let category = $state('Consultation');
 	let description = $state('');
 	let status = $state<'live' | 'paused'>('live');
-	let pricingType = $state<'complimentary' | 'paid'>('complimentary');
-	let priceInr = $state<number>(999);
+	let priceInr = $state<number>(0);
 	let selectedDurations = $state<number[]>([30, 60]);
 	let selectedExpertIds = $state<string[]>(
 		(data.teamMembers || []).map((m: any) => m.id)
@@ -207,83 +206,37 @@
 				</div>
 			</div>
 
-			<!-- Consultation Fee & Pricing Control (Admin / Owner Only) -->
-			<div class="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4">
+			<!-- Consultation Fee & Pricing Control -->
+			<div class="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3">
 				<div class="flex items-center justify-between">
 					<div>
-						<label class="block text-xs font-bold uppercase tracking-wider text-zinc-200">
-							Consultation Pricing Model *
+						<label for="price_inr" class="block text-xs font-bold uppercase tracking-wider text-zinc-200">
+							Consultation Fallback Base Fee (INR ₹)
 						</label>
 						<p class="text-[11px] text-zinc-400 mt-0.5">
-							Configure whether this service is complimentary or requires client payment / discount coupon.
+							Primary session prices and durations are determined by each expert's profile (<span class="text-blue-400">Expert-Driven</span>). Organization coupons (e.g. 100% OFF waivers) apply at checkout.
 						</p>
 					</div>
-					<span class="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 font-semibold">
-						Admin Control
+					<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
+						Expert-Driven Pricing
 					</span>
 				</div>
 
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-					<label
-						class="flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all {pricingType === 'complimentary'
-							? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
-							: 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10'}"
-					>
+				<div class="pt-1">
+					<div class="flex items-center max-w-xs rounded-xl bg-white/5 border border-white/15 overflow-hidden focus-within:border-blue-500 transition-all">
+						<span class="px-3.5 text-sm text-zinc-400 font-semibold">₹</span>
 						<input
-							type="radio"
-							name="pricing_type"
-							value="complimentary"
-							bind:group={pricingType}
-							class="sr-only"
+							type="number"
+							id="price_inr"
+							name="price_inr"
+							bind:value={priceInr}
+							min="0"
+							step="1"
+							class="w-full py-2.5 pr-4 bg-transparent text-sm text-white font-mono placeholder-zinc-500 focus:outline-none"
 						/>
-						<span class="text-xl">🎁</span>
-						<div>
-							<div class="text-xs font-bold">Complimentary (100% Free)</div>
-							<div class="text-[10px] opacity-75">No payment required, clients book directly</div>
-						</div>
-					</label>
-
-					<label
-						class="flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all {pricingType === 'paid'
-							? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
-							: 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10'}"
-					>
-						<input
-							type="radio"
-							name="pricing_type"
-							value="paid"
-							bind:group={pricingType}
-							class="sr-only"
-						/>
-						<span class="text-xl">💳</span>
-						<div>
-							<div class="text-xs font-bold">Paid Consultation</div>
-							<div class="text-[10px] opacity-75">Requires standard fee or coupon discount waiver</div>
-						</div>
-					</label>
-				</div>
-
-				{#if pricingType === 'paid'}
-					<div class="pt-2">
-						<label for="price_inr" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
-							Consultation Base Fee (INR ₹) *
-						</label>
-						<div class="flex items-center max-w-xs rounded-xl bg-white/5 border border-white/15 overflow-hidden focus-within:border-blue-500 transition-all">
-							<span class="px-3.5 text-sm text-zinc-400 font-semibold">₹</span>
-							<input
-								type="number"
-								id="price_inr"
-								name="price_inr"
-								bind:value={priceInr}
-								min="0"
-								step="1"
-								required
-								class="w-full py-2.5 pr-4 bg-transparent text-sm text-white font-mono placeholder-zinc-500 focus:outline-none"
-							/>
-						</div>
-						<p class="text-[10px] text-zinc-500 mt-1">Can be discounted or made complimentary using coupon codes.</p>
 					</div>
-				{/if}
+					<p class="text-[10px] text-zinc-500 mt-1">Fallback price if an assigned expert does not have customized session tiers.</p>
+				</div>
 			</div>
 
 			<!-- Session Duration Options (Chips) -->

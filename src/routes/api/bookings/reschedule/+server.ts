@@ -178,11 +178,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			.bind(bookingId)
 			.run();
 
-		// Cancel any old scheduled reminder emails and create new ones
-		await db
-			.prepare(`UPDATE scheduled_emails SET status = 'cancelled' WHERE booking_id = ? AND status = 'pending'`)
-			.bind(bookingId)
-			.run();
 
 		// Invalidate availability cache for both old and new dates
 		const oldDateStr = oldStartDateTime.toISOString().split('T')[0];
@@ -271,24 +266,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 					console.error('Failed to send admin reschedule notification:', adminEmailErr);
 				}
 
-				// Schedule new reminder emails
-				const reminderTypes = ['reminder_24h', 'reminder_1h'] as const;
-				const reminderOffsets: Record<string, number> = {
-					'reminder_24h': 24 * 60 * 60 * 1000,
-					'reminder_1h': 60 * 60 * 1000
-				};
-
-				for (const reminderType of reminderTypes) {
-					if (isEmailEnabled(templates, reminderType)) {
-						const scheduledFor = new Date(newStartDateTime.getTime() - reminderOffsets[reminderType]);
-						if (scheduledFor > new Date()) {
-							await db
-								.prepare(`INSERT INTO scheduled_emails (booking_id, template_type, scheduled_for) VALUES (?, ?, ?)`)
-								.bind(bookingId, reminderType, scheduledFor.toISOString())
-								.run();
-						}
-					}
-				}
 			} catch (emailError) {
 				console.error('Failed to send reschedule email:', emailError);
 			}

@@ -94,7 +94,6 @@ export const DELETE = async (event: RequestEvent) => {
 
 	await db.batch([
 		db.prepare('DELETE FROM reschedule_proposals WHERE booking_id IN (SELECT id FROM bookings WHERE user_id = ?)').bind(body.userId),
-		db.prepare('DELETE FROM scheduled_emails WHERE booking_id IN (SELECT id FROM bookings WHERE user_id = ?)').bind(body.userId),
 		db.prepare('DELETE FROM bookings WHERE user_id = ?').bind(body.userId),
 		db.prepare('DELETE FROM availability_rules WHERE user_id = ?').bind(body.userId),
 		db.prepare('DELETE FROM availability_overrides WHERE user_id = ?').bind(body.userId),

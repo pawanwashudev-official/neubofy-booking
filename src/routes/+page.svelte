@@ -1,9 +1,20 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { onMount } from 'svelte';
+	import {
+		clientUser,
+		clientAuthLoading,
+		getFirebaseAuth,
+		signInWithGoogle,
+		signInWithEmail,
+		signUpWithEmail,
+		signOutClient,
+		syncBookingToFirestore
+	} from '$lib/firebase/client';
 
 	let { data }: { data: PageData } = $props();
 
-	// Active booking wizard step: 1 = Service, 2 = Expert & Duration, 3 = Date & Slot, 4 = Intake & OTP, 5 = Confirmed
+	// Active booking wizard step: 1 = Service, 2 = Expert & Duration, 3 = Date & Slot, 4 = Intake & Payment, 5 = Confirmed
 	let step = $state<1 | 2 | 3 | 4 | 5>(1);
 
 	// Selected states
@@ -28,16 +39,50 @@
 	let clientExpectations = $state<string>('');
 	let attendeeNotes = $state<string>('');
 
-	// OTP Verification state
-	let otpSent = $state<boolean>(false);
-	let otpSending = $state<boolean>(false);
-	let otpCode = $state<string>('');
-	let otpVerifying = $state<boolean>(false);
-	let emailVerified = $state<boolean>(false);
-	let verificationToken = $state<string>('');
-	let otpMessage = $state<string>('');
-	let otpError = $state<string>('');
-	let resendCountdown = $state<number>(0);
+	// Client Firebase Auth Modal / Form state
+	let authMode = $state<'login' | 'signup'>('login');
+	let authEmail = $state<string>('');
+	let authPassword = $state<string>('');
+	let authName = $state<string>('');
+	let authError = $state<string>('');
+	let authSubmitting = $state<boolean>(false);
+
+	// Pricing & Coupon state
+	let couponInput = $state<string>('');
+	let couponValidating = $state<boolean>(false);
+	let appliedCoupon = $state<{
+		code: string;
+		discountAmount: number;
+		finalPrice: number;
+		isComplimentary: boolean;
+		message: string;
+	} | null>(null);
+	let couponError = $state<string>('');
+
+	// Reactive Expert-Driven Base Price based on selectedDuration
+	const currentBasePrice = $derived.by(() => {
+		if (selectedExpert?.session_pricing && selectedExpert.session_pricing.length > 0) {
+			const tier = selectedExpert.session_pricing.find((t: any) => Number(t.duration) === Number(selectedDuration)) || selectedExpert.session_pricing[0];
+			if (tier && typeof tier.price === 'number') return tier.price;
+		}
+		return selectedEvent?.price_inr || 0;
+	});
+
+	const currentFinalPrice = $derived(
+		appliedCoupon ? appliedCoupon.finalPrice : currentBasePrice
+	);
+
+	onMount(() => {
+		getFirebaseAuth();
+	});
+
+	// Auto-fill attendee details from Firebase user profile
+	$effect(() => {
+		if ($clientUser) {
+			if (!attendeeName && $clientUser.displayName) attendeeName = $clientUser.displayName;
+			if (!attendeeEmail && $clientUser.email) attendeeEmail = $clientUser.email;
+		}
+	});
 
 	// Booking submission state
 	let submittingBooking = $state<boolean>(false);
@@ -123,81 +168,81 @@
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
-	// OTP Send
-	async function handleSendOtp() {
-		if (!attendeeEmail || !attendeeEmail.includes('@')) {
-			otpError = 'Please enter a valid email address first.';
+	// Coupon Validation
+	async function applyCoupon(codeToApply?: string) {
+		const targetCode = (codeToApply || couponInput).trim();
+		if (!targetCode) {
+			couponError = 'Please enter a coupon code.';
 			return;
 		}
-		otpSending = true;
-		otpError = '';
-		otpMessage = '';
+
+		couponValidating = true;
+		couponError = '';
 
 		try {
-			const res = await fetch('/api/otp/send', {
+			const res = await fetch('/api/coupons/validate', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: attendeeEmail })
+				body: JSON.stringify({
+					code: targetCode,
+					eventSlug: selectedEvent?.slug,
+					expertUserId: selectedExpert?.id,
+					durationMinutes: selectedDuration
+				})
 			});
+
 			const json = (await res.json()) as any;
 			if (!res.ok) {
-				throw new Error(json.message || 'Failed to send verification code.');
+				throw new Error(json.message || 'Invalid coupon code.');
 			}
-			otpSent = true;
-			otpMessage = '6-digit verification code sent to your inbox.';
-			resendCountdown = 60;
-			const timer = setInterval(() => {
-				resendCountdown -= 1;
-				if (resendCountdown <= 0) clearInterval(timer);
-			}, 1000);
+
+			appliedCoupon = {
+				code: json.code,
+				discountAmount: json.discountAmount,
+				finalPrice: json.finalPrice,
+				isComplimentary: json.isComplimentary,
+				message: json.message
+			};
+			couponInput = json.code;
 		} catch (err: any) {
-			otpError = err.message || 'Error sending verification code.';
+			couponError = err.message || 'Failed to apply coupon.';
+			appliedCoupon = null;
 		} finally {
-			otpSending = false;
+			couponValidating = false;
 		}
 	}
 
-	// OTP Verify
-	async function handleVerifyOtp() {
-		if (!otpCode || otpCode.trim().length !== 6) {
-			otpError = 'Please enter the 6-digit verification code.';
-			return;
-		}
-		otpVerifying = true;
-		otpError = '';
-
-		try {
-			const res = await fetch('/api/otp/verify', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: attendeeEmail, code: otpCode.trim() })
-			});
-			const json = (await res.json()) as any;
-			if (!res.ok) {
-				throw new Error(json.message || 'Verification failed. Invalid code.');
-			}
-			emailVerified = true;
-			verificationToken = json.verifiedToken;
-			otpMessage = 'Email verified successfully!';
-		} catch (err: any) {
-			otpError = err.message || 'Invalid code. Please try again.';
-		} finally {
-			otpVerifying = false;
-		}
+	function removeCoupon() {
+		appliedCoupon = null;
+		couponInput = '';
+		couponError = '';
 	}
 
 	// Submit Final Booking
 	async function handleConfirmBooking() {
-		if (!emailVerified || !verificationToken) {
-			bookingError = 'Please verify your email address using the 6-digit OTP code.';
+		if (!$clientUser) {
+			bookingError = 'Please sign in or create an account to complete your booking.';
 			return;
 		}
-		if (!attendeeName.trim()) {
-			bookingError = 'Please provide your full name.';
+		
+		if (!attendeeName?.trim()) {
+			attendeeName = $clientUser.displayName || $clientUser.email?.split('@')[0] || 'Valued Client';
+		}
+		if (!attendeeEmail?.trim()) {
+			attendeeEmail = $clientUser.email || '';
+		}
+		if (!attendeeEmail.trim()) {
+			bookingError = 'Verified client email required.';
 			return;
 		}
 		if (!selectedSlot) {
 			bookingError = 'Please select an appointment time slot.';
+			return;
+		}
+
+		// Check if paid consultation requires coupon waiver
+		if (currentFinalPrice > 0) {
+			bookingError = 'Please apply the 100% OFF coupon code (NEUBOFYVIP) to complete your complimentary consultation waiver.';
 			return;
 		}
 
@@ -223,7 +268,8 @@
 					reason: clientReason.trim(),
 					expectations: clientExpectations.trim(),
 					notes: attendeeNotes.trim(),
-					verificationToken,
+					couponCode: appliedCoupon?.code || (currentBasePrice === 0 ? 'NEUBOFYVIP' : undefined),
+					clientFirebaseUid: $clientUser.uid,
 					timezone: availabilityTimezone
 				})
 			});
@@ -241,6 +287,26 @@
 				startTime: json.startTime || selectedSlot.start,
 				endTime: json.endTime || selectedSlot.end
 			};
+
+			// Sync booking into Firestore under client profile
+			await syncBookingToFirestore({
+				clientUid: $clientUser.uid,
+				bookingId: json.bookingId,
+				attendeeName: attendeeName.trim(),
+				attendeeEmail: attendeeEmail.trim().toLowerCase(),
+				attendeePhone: fullPhone,
+				eventSlug: selectedEvent.slug,
+				eventName: selectedEvent.name,
+				expertName: selectedExpert?.name || 'Neubofy Specialist',
+				expertId: selectedExpert?.id || '',
+				startTime: selectedSlot.start,
+				endTime: selectedSlot.end,
+				durationMinutes: selectedDuration,
+				priceAmount: currentFinalPrice,
+				couponCode: appliedCoupon?.code,
+				meetingUrl: json.meetingUrl
+			});
+
 			step = 5;
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 		} catch (err: any) {
@@ -255,10 +321,8 @@
 		selectedEvent = null;
 		selectedExpert = null;
 		selectedSlot = null;
-		emailVerified = false;
-		verificationToken = '';
-		otpCode = '';
-		otpSent = false;
+		appliedCoupon = null;
+		couponInput = '';
 		confirmedBooking = null;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
@@ -857,10 +921,8 @@
 														: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
 												>
 													<span class="font-bold">{tier.duration} Mins</span>
-													{#if tier.price > 0}
-														<span class="text-[11px] text-zinc-400 line-through">₹{tier.price}</span>
-													{/if}
-													<span class="text-[11px] text-emerald-400 font-bold">Complimentary</span>
+													<span class="text-[11px] text-blue-400 font-bold">₹{tier.price || 0}</span>
+													<span class="text-[9px] text-emerald-400 font-medium">100% waiver with VIP coupon</span>
 												</button>
 											{/each}
 										</div>
@@ -1087,183 +1149,274 @@
 					</div>
 				</div>
 
-				<!-- Intake & Verification Form -->
+				<!-- Intake & Client Account Form -->
 				<div class="glass-card rounded-2xl p-6 sm:p-8 border border-white/10 space-y-6">
 					<div>
-						<h3 class="text-lg font-bold text-white">Your Information & Verification</h3>
-						<p class="text-xs text-zinc-400">Please provide your details and verify your email via 6-digit OTP.</p>
+						<h3 class="text-lg font-bold text-white">Client Account & Details</h3>
+						<p class="text-xs text-zinc-400">All bookings are linked to your verified client portal account.</p>
 					</div>
 
-					<!-- Name & Mobile -->
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-						<div>
-							<label for="attendee-name" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-								Full Name <span class="text-red-400">*</span>
-							</label>
-							<input
-								id="attendee-name"
-								type="text"
-								bind:value={attendeeName}
-								placeholder="e.g. Rahul Sharma"
-								required
-								class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-							/>
-						</div>
-
-						<div>
-							<label for="attendee-phone" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-								Mobile / WhatsApp Number <span class="text-red-400">*</span>
-							</label>
-							<div class="flex gap-2">
-								<select
-									bind:value={attendeeCountryCode}
-									class="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-								>
-									<option value="+91">🇮🇳 +91</option>
-									<option value="+1">🇺🇸 +1</option>
-									<option value="+44">🇬🇧 +44</option>
-									<option value="+971">🇦🇪 +971</option>
-									<option value="+65">🇸🇬 +65</option>
-								</select>
-								<input
-									id="attendee-phone"
-									type="tel"
-									bind:value={attendeeMobile}
-									placeholder="98765 43210"
-									required
-									class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
-								/>
+					<!-- Firebase Client Auth Section -->
+					{#if !$clientUser}
+						<div class="p-5 rounded-2xl bg-black/40 border border-blue-500/30 space-y-4">
+							<div class="flex items-center gap-3">
+								<span class="text-xl">🔐</span>
+								<div>
+									<h4 class="text-sm font-bold text-white">Sign In or Create Client Account</h4>
+									<p class="text-[11px] text-zinc-400">An authenticated account is required to book and manage sessions.</p>
+								</div>
 							</div>
-						</div>
-					</div>
 
-					<!-- Email & Strict OTP Verification -->
-					<div class="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3">
-						<label for="attendee-email" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-							Email Address (Strict Verification) <span class="text-red-400">*</span>
-						</label>
+							<!-- One-Click Google Auth -->
+							<button
+								type="button"
+								onclick={async () => {
+									authError = '';
+									authSubmitting = true;
+									try {
+										await signInWithGoogle();
+									} catch (err: any) {
+										authError = err.message || 'Google sign-in failed.';
+									} finally {
+										authSubmitting = false;
+									}
+								}}
+								disabled={authSubmitting}
+								class="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-white text-zinc-900 font-bold text-xs hover:bg-zinc-100 transition-all shadow-md disabled:opacity-50"
+							>
+								<svg class="w-4 h-4" viewBox="0 0 24 24">
+									<path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+									<path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+									<path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+									<path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+								</svg>
+								<span>Continue with Google</span>
+							</button>
 
-						<div class="flex flex-col sm:flex-row gap-2">
-							<input
-								id="attendee-email"
-								type="email"
-								disabled={emailVerified}
-								bind:value={attendeeEmail}
-								placeholder="you@company.com"
-								class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none disabled:opacity-60"
-							/>
-							{#if !emailVerified}
+							<div class="flex items-center gap-3">
+								<div class="flex-1 h-px bg-white/10"></div>
+								<span class="text-[10px] uppercase font-mono text-zinc-500">or with email</span>
+								<div class="flex-1 h-px bg-white/10"></div>
+							</div>
+
+							<!-- Email Auth Form -->
+							<div class="grid grid-cols-2 p-1 rounded-xl bg-white/5 border border-white/10 text-xs font-semibold">
 								<button
 									type="button"
-									disabled={otpSending || resendCountdown > 0}
-									onclick={handleSendOtp}
-									class="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-all disabled:opacity-50 shrink-0"
+									onclick={() => { authMode = 'login'; authError = ''; }}
+									class="py-1 rounded-lg transition-all {authMode === 'login' ? 'bg-blue-600 text-white' : 'text-zinc-400'}"
 								>
-									{otpSending
-										? 'Sending...'
-										: resendCountdown > 0
-											? `Resend (${resendCountdown}s)`
-											: otpSent
-												? 'Resend OTP'
-												: 'Send OTP Code'}
+									Sign In
 								</button>
-							{:else}
-								<div class="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
-									✓ Verified
+								<button
+									type="button"
+									onclick={() => { authMode = 'signup'; authError = ''; }}
+									class="py-1 rounded-lg transition-all {authMode === 'signup' ? 'bg-blue-600 text-white' : 'text-zinc-400'}"
+								>
+									Register
+								</button>
+							</div>
+
+							<div class="space-y-2.5">
+								{#if authMode === 'signup'}
+									<input
+										type="text"
+										bind:value={authName}
+										placeholder="Your Full Name"
+										class="w-full px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-zinc-500 outline-none focus:border-blue-500"
+									/>
+								{/if}
+								<input
+									type="email"
+									bind:value={authEmail}
+									placeholder="Email Address"
+									class="w-full px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-zinc-500 outline-none focus:border-blue-500"
+								/>
+								<input
+									type="password"
+									bind:value={authPassword}
+									placeholder="Password (min 6 characters)"
+									class="w-full px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-zinc-500 outline-none focus:border-blue-500"
+								/>
+
+								{#if authError}
+									<p class="text-xs text-red-400">{authError}</p>
+								{/if}
+
+								<button
+									type="button"
+									disabled={authSubmitting || !authEmail || !authPassword}
+									onclick={async () => {
+										authError = '';
+										authSubmitting = true;
+										try {
+											if (authMode === 'login') {
+												await signInWithEmail(authEmail.trim(), authPassword);
+											} else {
+												await signUpWithEmail(authEmail.trim(), authPassword, authName.trim());
+											}
+										} catch (err: any) {
+											authError = err.message || 'Authentication failed.';
+										} finally {
+											authSubmitting = false;
+										}
+									}}
+									class="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors disabled:opacity-50"
+								>
+									{authSubmitting ? 'Authenticating...' : authMode === 'login' ? 'Sign In to Account' : 'Create & Link Account'}
+								</button>
+							</div>
+						</div>
+					{:else}
+						<!-- Signed In Client Badge -->
+						<div class="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-between">
+							<div class="flex items-center gap-3">
+								<div class="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0">
+									{($clientUser.displayName || $clientUser.email || 'U').charAt(0).toUpperCase()}
+								</div>
+								<div>
+									<div class="text-xs font-bold text-white flex items-center gap-2">
+										<span>{$clientUser.displayName || 'Verified Client'}</span>
+										<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Firebase Auth ✓</span>
+									</div>
+									<div class="text-[11px] text-zinc-400 font-mono">{$clientUser.email}</div>
+								</div>
+							</div>
+							<button
+								type="button"
+								onclick={signOutClient}
+								class="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors"
+							>
+								Switch Account
+							</button>
+						</div>
+					{/if}
+
+					{#if $clientUser}
+						<!-- Verified Participant Information -->
+						<div class="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
+							<div class="flex items-center justify-between text-xs">
+								<span class="text-zinc-400">Consultation For:</span>
+								<span class="font-bold text-white">{$clientUser.displayName || $clientUser.email}</span>
+							</div>
+							<div class="flex items-center justify-between text-xs">
+								<span class="text-zinc-400">Calendar & Meeting Invite:</span>
+								<span class="font-mono text-zinc-300">{$clientUser.email}</span>
+							</div>
+							{#if $clientUser.phoneNumber}
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-zinc-400">Linked Phone:</span>
+									<span class="font-mono text-zinc-300">{$clientUser.phoneNumber}</span>
 								</div>
 							{/if}
 						</div>
 
-						<!-- OTP Input Box -->
-						{#if otpSent && !emailVerified}
-							<div class="pt-2 flex flex-col sm:flex-row gap-2">
-								<input
-									type="text"
-									maxLength={6}
-									bind:value={otpCode}
-									placeholder="Enter 6-digit OTP code"
-									class="w-full sm:w-48 px-4 py-2.5 text-center font-mono text-base tracking-widest rounded-xl bg-white/10 border border-blue-500/40 text-white outline-none"
-								/>
+						<!-- Single Optional Notes field -->
+						<div>
+							<label for="attendee-notes" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+								Project Context / Session Agenda (Optional)
+							</label>
+							<textarea
+								id="attendee-notes"
+								bind:value={attendeeNotes}
+								rows={2}
+								placeholder="Share any background, architecture questions, or links for your consultant..."
+								class="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500 resize-none"
+							></textarea>
+						</div>
+					{/if}
+
+					<!-- Pricing Breakdown & Coupon Waiver -->
+					<div class="p-5 rounded-2xl bg-black/40 border border-white/10 space-y-4">
+						<div class="flex items-center justify-between">
+							<div>
+								<span class="text-[10px] font-bold uppercase tracking-wider text-blue-400">Checkout & Fee</span>
+								<h4 class="text-sm font-bold text-white">Consultation Fee & Waiver</h4>
+							</div>
+							<span class="text-xs font-mono font-bold text-zinc-300">
+								{selectedDuration} Mins with {selectedExpert?.name || 'Expert'}
+							</span>
+						</div>
+
+						<!-- Quick One-Click 100% OFF Coupon -->
+						<div class="p-3 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+							<div class="flex items-center gap-2">
+								<span class="text-lg">🎁</span>
+								<div>
+									<div class="text-xs font-bold text-emerald-400">100% OFF Welcome Promo Available</div>
+									<div class="text-[10px] text-zinc-400">Use code <span class="font-mono font-bold text-white">NEUBOFYVIP</span> to make your consultation 100% free.</div>
+								</div>
+							</div>
+							<button
+								type="button"
+								onclick={() => applyCoupon('NEUBOFYVIP')}
+								disabled={couponValidating || appliedCoupon?.code === 'NEUBOFYVIP'}
+								class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-sm shrink-0 disabled:opacity-60"
+							>
+								{appliedCoupon?.code === 'NEUBOFYVIP' ? '✓ Applied' : 'Apply NEUBOFYVIP'}
+							</button>
+						</div>
+
+						<!-- Coupon Input Box -->
+						<div class="flex gap-2">
+							<input
+								type="text"
+								bind:value={couponInput}
+								placeholder="Enter promo or waiver code"
+								class="flex-1 px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white uppercase font-mono placeholder-zinc-500 outline-none focus:border-blue-500"
+							/>
+							<button
+								type="button"
+								disabled={couponValidating || !couponInput.trim()}
+								onclick={() => applyCoupon()}
+								class="px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-colors disabled:opacity-50"
+							>
+								{couponValidating ? 'Checking...' : 'Apply Code'}
+							</button>
+							{#if appliedCoupon}
 								<button
 									type="button"
-									disabled={otpVerifying || otpCode.trim().length !== 6}
-									onclick={handleVerifyOtp}
-									class="btn-electric px-6 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50"
+									onclick={removeCoupon}
+									class="px-3 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-red-400 bg-white/5 transition-colors"
 								>
-									{otpVerifying ? 'Verifying...' : 'Verify OTP'}
+									✕
 								</button>
+							{/if}
+						</div>
+
+						{#if couponError}
+							<p class="text-xs text-red-400">{couponError}</p>
+						{/if}
+
+						{#if appliedCoupon}
+							<div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-medium">
+								{appliedCoupon.message}
 							</div>
 						{/if}
 
-						{#if otpMessage}
-							<p class="text-xs text-emerald-400">{otpMessage}</p>
-						{/if}
-						{#if otpError}
-							<p class="text-xs text-red-400">{otpError}</p>
-						{/if}
-					</div>
-
-					<!-- 3 Consultation Intake Questions -->
-					<div class="space-y-4 pt-2">
-						<h4 class="text-xs font-bold uppercase tracking-wider text-zinc-300">
-							Consultation Objectives & Expectations
-						</h4>
-
-						<div>
-							<label for="client-goal" class="block text-xs font-medium text-zinc-400 mb-1">
-								1. What is your primary business or technical goal? <span class="text-red-400">*</span>
-							</label>
-							<textarea
-								id="client-goal"
-								bind:value={clientGoal}
-								rows={2}
-								placeholder="e.g. Build an AI-driven workflow automation / modernize our cloud architecture..."
-								class="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
-							></textarea>
-						</div>
-
-						<div>
-							<label for="client-reason" class="block text-xs font-medium text-zinc-400 mb-1">
-								2. Why do you want this consultation right now? <span class="text-red-400">*</span>
-							</label>
-							<textarea
-								id="client-reason"
-								bind:value={clientReason}
-								rows={2}
-								placeholder="e.g. We are facing integration bottlenecks / need independent architectural verification..."
-								class="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
-							></textarea>
-						</div>
-
-						<div>
-							<label for="client-expectations" class="block text-xs font-medium text-zinc-400 mb-1">
-								3. What are your key expectations from our expert? <span class="text-red-400">*</span>
-							</label>
-							<textarea
-								id="client-expectations"
-								bind:value={clientExpectations}
-								rows={2}
-								placeholder="e.g. Actionable roadmap, build vs buy comparison, and technical feasibility audit..."
-								class="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none focus:border-blue-500"
-							></textarea>
-						</div>
-
-						<div>
-							<label for="attendee-notes" class="block text-xs font-medium text-zinc-400 mb-1">
-								Additional Notes or Links (Optional)
-							</label>
-							<input
-								id="attendee-notes"
-								type="text"
-								bind:value={attendeeNotes}
-								placeholder="GitHub repos, architecture docs, or specific questions..."
-								class="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-							/>
+						<!-- Price Calculation Summary -->
+						<div class="pt-3 border-t border-white/10 space-y-1.5 text-xs font-mono">
+							<div class="flex items-center justify-between text-zinc-400">
+								<span>Consultation Rate:</span>
+								<span>₹{currentBasePrice}</span>
+							</div>
+							{#if appliedCoupon}
+								<div class="flex items-center justify-between text-emerald-400">
+									<span>Promo Discount ({appliedCoupon.code}):</span>
+									<span>-₹{appliedCoupon.discountAmount}</span>
+								</div>
+							{/if}
+							<div class="flex items-center justify-between text-sm font-bold pt-2 border-t border-white/5 text-white">
+								<span>Final Amount:</span>
+								<span class={currentFinalPrice === 0 ? 'text-emerald-400' : 'text-blue-400'}>
+									₹{currentFinalPrice} {currentFinalPrice === 0 ? '(100% Free / Auto-completed)' : ''}
+								</span>
+							</div>
 						</div>
 					</div>
 
 					{#if bookingError}
-						<div class="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs">
+						<div class="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-medium">
 							{bookingError}
 						</div>
 					{/if}
@@ -1272,20 +1425,25 @@
 					<div class="pt-4 border-t border-white/10">
 						<button
 							type="button"
-							disabled={submittingBooking || !emailVerified}
+							disabled={submittingBooking || !$clientUser}
 							onclick={handleConfirmBooking}
-							class="w-full btn-electric py-3.5 px-6 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+							class="w-full btn-electric py-3.5 px-6 rounded-xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
 						>
 							{#if submittingBooking}
 								<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-								Scheduling Meeting...
+								<span>Confirming Consultation...</span>
 							{:else}
-								Confirm & Schedule Consultation (Free) →
+								<span>Confirm & Schedule Consultation {currentFinalPrice === 0 ? '(Free)' : `(₹${currentFinalPrice})`} →</span>
 							{/if}
 						</button>
-						{#if !emailVerified}
-							<p class="text-[11px] text-zinc-500 text-center mt-2">
-								* Please verify your email with the 6-digit OTP code above to enable scheduling.
+
+						{#if !$clientUser}
+							<p class="text-[11px] text-amber-400/90 text-center mt-2 font-medium">
+								* Please sign in or register above to complete your booking.
+							</p>
+						{:else if currentFinalPrice > 0}
+							<p class="text-[11px] text-zinc-400 text-center mt-2">
+								* Payment gateway is currently invite-only. Apply coupon <button type="button" onclick={() => applyCoupon('NEUBOFYVIP')} class="text-blue-400 underline font-bold">NEUBOFYVIP</button> to proceed without charge.
 							</p>
 						{/if}
 					</div>

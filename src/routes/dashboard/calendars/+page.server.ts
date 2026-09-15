@@ -1,5 +1,5 @@
 /**
- * Calendar Settings page
+ * Google Calendar Sync Settings Server Loader
  */
 
 import { redirect } from '@sveltejs/kit';
@@ -15,27 +15,16 @@ export const load: PageServerLoad = async (event) => {
 
 	const db = event.platform?.env?.DB;
 	if (!db) {
-		return {
-			user: null,
-			outlookConfigured: false
-		};
+		return { user: null };
 	}
 
-	// Get user info including calendar connection status
+	// Query user calendar connection status
 	const user = await db
-		.prepare('SELECT id, google_refresh_token, outlook_refresh_token, settings FROM users WHERE id = ?')
+		.prepare('SELECT id, google_refresh_token, settings FROM users WHERE id = ?')
 		.bind(userId)
-		.first<{ id: string; google_refresh_token: string | null; outlook_refresh_token: string | null; settings: string | null }>();
+		.first<{ id: string; google_refresh_token: string | null; settings: string | null }>();
 
-	// Check if Microsoft OAuth is configured
-	const outlookConfigured = !!(event.platform?.env?.MICROSOFT_CLIENT_ID && event.platform?.env?.MICROSOFT_CLIENT_SECRET);
-
-	// Parse user settings for global calendar defaults
-	let userSettings: {
-		defaultAvailabilityCalendars?: 'google' | 'outlook' | 'both';
-		defaultInviteCalendar?: 'google' | 'outlook';
-		selectedGoogleCalendars?: string[];
-	} = {};
+	let userSettings: { selectedGoogleCalendars?: string[] } = {};
 	try {
 		userSettings = user?.settings ? JSON.parse(user.settings) : {};
 	} catch {
@@ -45,11 +34,7 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		user: user ? {
 			googleConnected: !!user.google_refresh_token,
-			outlookConnected: !!user.outlook_refresh_token,
-			defaultAvailabilityCalendars: userSettings.defaultAvailabilityCalendars,
-			defaultInviteCalendar: userSettings.defaultInviteCalendar,
 			selectedGoogleCalendars: userSettings.selectedGoogleCalendars
-		} : null,
-		outlookConfigured
+		} : null
 	};
 };

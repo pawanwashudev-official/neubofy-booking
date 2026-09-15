@@ -48,7 +48,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const res = await db
 			.prepare(
-				`SELECT id, name, slug, duration_minutes as duration, description, is_active, category, is_free_only, price_inr
+				`SELECT id, name, slug, duration_minutes as duration, description, is_active, category, price_inr
 				 FROM event_types
 				 WHERE organization_id = ? AND (? = 1 OR user_id = ?)
 				 ORDER BY created_at ASC`
@@ -67,14 +67,14 @@ export const load: PageServerLoad = async (event) => {
 				)
 				.bind(auth.organizationId, (isAdmin && workspaceMode === 'org') ? 1 : 0, auth.userId)
 				.all();
-			eventTypesList = (res.results || []).map((et: any) => ({ ...et, is_free_only: 1, price_inr: 0 }));
+			eventTypesList = (res.results || []).map((et: any) => ({ ...et, price_inr: 0 }));
 		} catch {
 			try {
 				const res = await db
 					.prepare('SELECT id, name, slug, duration_minutes as duration, description, is_active FROM event_types WHERE ? = 1 OR user_id = ?')
 					.bind((isAdmin && workspaceMode === 'org') ? 1 : 0, auth.userId)
 					.all();
-				eventTypesList = (res.results || []).map((et: any) => ({ ...et, is_free_only: 1, price_inr: 0, category: 'Consultation' }));
+				eventTypesList = (res.results || []).map((et: any) => ({ ...et, price_inr: 0, category: 'Consultation' }));
 			} catch (e) {
 				console.error('Failed to load event types in dashboard:', e);
 			}

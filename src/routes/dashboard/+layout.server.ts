@@ -32,7 +32,7 @@ export const load: LayoutServerLoad = async (event) => {
 		user = await db
 			.prepare(
 				`SELECT id, name, email, slug, profile_image, brand_color, role_title, bio, phone,
-				        session_pricing, is_free_consultation, google_refresh_token, outlook_refresh_token
+				        session_pricing, google_refresh_token
 				 FROM users WHERE id = ?`
 			)
 			.bind(userId)
@@ -52,6 +52,9 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	if (!user) {
+		// Auto-clean corrupted cookie
+		event.cookies.delete('session', { path: '/' });
+		event.cookies.delete('neubofy_workspace_mode', { path: '/' });
 		throw redirect(302, '/auth/login');
 	}
 

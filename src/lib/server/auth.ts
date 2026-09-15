@@ -128,6 +128,10 @@ export async function getGoogleUserInfo(accessToken: string): Promise<GoogleUser
 	return response.json();
 }
 
+import { createSignedToken, verifySignedToken, hashString, timingSafeEqual } from './crypto';
+
+export { hashString, timingSafeEqual };
+
 /**
  * Create session token (simple JWT-like token)
  */
@@ -135,16 +139,7 @@ export async function createSessionToken(
 	userId: string,
 	secret: string
 ): Promise<string> {
-	const payload = {
-		userId,
-		iat: Date.now()
-	};
-
-	// Simple base64 encoding with signature
-	const data = btoa(JSON.stringify(payload));
-	const signature = await hashString(`${data}.${secret}`);
-
-	return `${data}.${signature}`;
+	return createSignedToken({ userId, iat: Date.now() }, secret);
 }
 
 /**
@@ -154,58 +149,9 @@ export async function verifySessionToken(
 	token: string,
 	secret: string
 ): Promise<{ userId: string } | null> {
-	try {
-		const [data, signature] = token.split('.');
-		const expectedSignature = await hashString(`${data}.${secret}`);
-
-		// Timing-safe comparison to prevent timing attacks
-		if (!timingSafeEqual(signature, expectedSignature)) {
-			return null;
-		}
-
-		const payload = JSON.parse(atob(data));
-
-		// Check if token is expired (7 days - matches cookie maxAge)
-		const age = Date.now() - payload.iat;
-		if (age > 7 * 24 * 60 * 60 * 1000) {
-			return null;
-		}
-
-		return { userId: payload.userId };
-	} catch {
-		return null;
-	}
+	return verifySignedToken<{ userId: string }>(token, secret, 7 * 24 * 60 * 60 * 1000);
 }
 
-/**
- * Timing-safe string comparison to prevent timing attacks
- */
-function timingSafeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) return false;
-	const encoder = new TextEncoder();
-	const bufA = encoder.encode(a);
-	const bufB = encoder.encode(b);
-	let result = 0;
-	for (let i = 0; i < bufA.length; i++) {
-		result |= bufA[i] ^ bufB[i];
-	}
-	return result === 0;
-}
-
-/**
- * Hash string using Web Crypto API
- */
-async function hashString(str: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const data = encoder.encode(str);
-	const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Get current user from session cookie
- */
 export async function getCurrentUser(
 	event: RequestEvent
 ): Promise<string | null> {
@@ -219,8 +165,39 @@ export async function getCurrentUser(
 		console.error('FATAL: JWT_SECRET environment variable is not configured');
 		return null;
 	}
-	const session = await verifySessionToken(sessionToken, jwtSecret);
-	return session?.userId ?? null;
+
+	try {
+		const session = await verifySessionToken(sessionToken, jwtSecret);
+		if (!session?.userId) {
+			// Corrupted or expired session token -> automatically clear cookie!
+			event.cookies.delete('session', { path: '/' });
+			event.cookies.delete('neubofy_workspace_mode', { path: '/' });
+			return null;
+		}
+
+		// Verify user still exists in database (in case database was reset or user was pruned)
+		const db = event.platform?.env?.DB;
+		if (db) {
+			const userExists = await db
+				.prepare('SELECT id FROM users WHERE id = ?')
+				.bind(session.userId)
+				.first();
+
+			if (!userExists) {
+				console.warn('[auth:auto-clean] Session references deleted user, clearing corrupted cookies.');
+				event.cookies.delete('session', { path: '/' });
+				event.cookies.delete('neubofy_workspace_mode', { path: '/' });
+				return null;
+			}
+		}
+
+		return session.userId;
+	} catch (err) {
+		console.warn('[auth:auto-clean] Error verifying session token, clearing corrupted cookies:', err);
+		event.cookies.delete('session', { path: '/' });
+		event.cookies.delete('neubofy_workspace_mode', { path: '/' });
+		return null;
+	}
 }
 
 /** Resolve the active organization membership on every request. */
@@ -255,19 +232,6 @@ export async function getAuthContext(event: RequestEvent): Promise<AuthContext |
 		} catch (err2) {
 			console.error('Failed to query organization_members in getAuthContext:', err2);
 		}
-	}
-
-	// Auto-heal membership if missing but organization exists
-	if (!membership) {
-		try {
-			const org = await db.prepare('SELECT id FROM organizations ORDER BY created_at LIMIT 1').first<{ id: string }>();
-			if (org) {
-				const orgId = org.id;
-				await db.prepare('INSERT OR IGNORE INTO organization_members (organization_id, user_id, role, is_active) VALUES (?, ?, ?, 1)')
-					.bind(orgId, userId, 'admin').run();
-				membership = { organizationId: orgId, role: 'admin' as OrganizationRole };
-			}
-		} catch {}
 	}
 
 	return membership ? { userId, ...membership } : null;

@@ -28,7 +28,7 @@ export const load: PageServerLoad = async (event) => {
 		const res = await db
 			.prepare(
 				`SELECT et.id, et.user_id, et.organization_id, et.name, et.slug, et.duration_minutes, et.description,
-				        et.category, et.is_active, et.is_free_only, et.color, et.durations_json,
+				        et.category, et.is_active, et.price_inr, et.color, et.durations_json,
 				        count(b.id) as booking_count
 				 FROM event_types et
 				 LEFT JOIN bookings b ON b.event_type_id = et.id
@@ -54,7 +54,7 @@ export const load: PageServerLoad = async (event) => {
 			eventTypesResults = (res.results || []).map((et: any) => ({
 				...et,
 				category: 'Consultation',
-				is_free_only: 1,
+				price_inr: 0,
 				durations_json: `[${et.duration_minutes || 30}]`
 			}));
 		} catch (e) {
@@ -117,7 +117,9 @@ export const load: PageServerLoad = async (event) => {
 		let parsedDurations: number[] = [30];
 		try {
 			parsedDurations = et.durations_json ? JSON.parse(et.durations_json) : [et.duration_minutes || 30];
-		} catch {}
+		} catch (errDur) {
+			console.warn('[dashboard/event-types] Failed to parse durations_json:', errDur);
+		}
 
 		return {
 			...et,

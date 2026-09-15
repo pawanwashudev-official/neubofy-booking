@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 		const eventTypesResult = await db
 			.prepare(
 				`SELECT id, user_id, organization_id, name, slug, description, category, durations_json,
-				        duration_minutes, icon_name, color, cover_image, is_free_only, is_active
+				        duration_minutes, icon_name, color, cover_image, price_inr, is_active
 				 FROM event_types
 				 WHERE COALESCE(is_active, 1) = 1
 				 ORDER BY created_at ASC`
@@ -73,7 +73,9 @@ export const load: PageServerLoad = async ({ platform }) => {
 			let parsedPricing: any[] = [];
 			try {
 				parsedPricing = expert.session_pricing ? JSON.parse(expert.session_pricing) : [];
-			} catch {}
+			} catch (err) {
+				console.warn('[root:load] Failed to parse expert session_pricing:', err);
+			}
 			return {
 				...expert,
 				session_pricing: parsedPricing
@@ -106,7 +108,9 @@ export const load: PageServerLoad = async ({ platform }) => {
 			let parsedDurations: number[] = [30, 60];
 			try {
 				parsedDurations = et.durations_json ? JSON.parse(et.durations_json) : [30, 60];
-			} catch {}
+			} catch (err) {
+				console.warn('[root:load] Failed to parse event durations_json:', err);
+			}
 
 			return {
 				...et,
