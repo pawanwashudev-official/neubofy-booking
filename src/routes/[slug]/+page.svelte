@@ -107,7 +107,7 @@
 	}
 
 	// Calendar days computation
-	const calendarDays = $derived(() => {
+	const calendarDays = $derived.by(() => {
 		const year = currentMonth.getFullYear();
 		const month = currentMonth.getMonth();
 		const firstDay = new Date(year, month, 1);
@@ -560,7 +560,7 @@
 
 					<!-- Calendar grid -->
 					<div class="grid grid-cols-7 gap-1">
-						{#each calendarDays() as day}
+						{#each calendarDays as day}
 							{@const hasSlots = availableDates.has(day.dateStr)}
 							{@const isClickable = day.isAvailable && hasSlots}
 							{@const isSelected = selectedDate === day.dateStr}
@@ -601,7 +601,7 @@
 								<button
 									type="button"
 									onclick={() => selectSlot(slot)}
-									class="py-3 px-4 border rounded-xl text-sm font-semibold transition
+									class="py-3 px-4 border rounded-xl text-sm font-semibold transition min-h-[44px] flex items-center justify-center
 										{isSelected ? 'border-blue-500 bg-blue-600/20 text-blue-400 shadow-sm' : 'border-white/10 bg-white/5 text-zinc-300 hover:border-white/20'}"
 								>
 									{formatTime(slot.start)}
@@ -612,7 +612,7 @@
 							<button
 								type="button"
 								onclick={confirmSlot}
-								class="w-full mt-6 py-3 px-6 text-white rounded-xl font-semibold transition shadow-lg shadow-blue-500/20 hover:opacity-95"
+								class="w-full mt-6 py-3.5 px-6 text-white rounded-xl font-semibold transition shadow-lg shadow-blue-500/20 hover:opacity-95 min-h-[48px] flex items-center justify-center"
 								style="background-color: var(--brand-color, #2563eb)"
 							>
 								Next

@@ -134,11 +134,11 @@
 	{/if}
 
 	<!-- Status Filter Tabs -->
-	<div class="flex flex-wrap items-center gap-2 border-b border-white/10 pb-4">
+	<div class="flex items-center gap-2 border-b border-white/10 pb-4 overflow-x-auto scrollbar-none flex-nowrap sm:flex-wrap">
 		<button
 			type="button"
 			onclick={() => (filterStatus = 'upcoming')}
-			class="px-4 py-2 rounded-xl text-xs font-semibold transition-all {filterStatus === 'upcoming'
+			class="px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all {filterStatus === 'upcoming'
 				? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
 				: 'bg-white/5 text-zinc-400 hover:text-white border border-white/10'}"
 		>
@@ -148,7 +148,7 @@
 		<button
 			type="button"
 			onclick={() => (filterStatus = 'completed')}
-			class="px-4 py-2 rounded-xl text-xs font-semibold transition-all {filterStatus === 'completed'
+			class="px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all {filterStatus === 'completed'
 				? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
 				: 'bg-white/5 text-zinc-400 hover:text-white border border-white/10'}"
 		>
@@ -158,7 +158,7 @@
 		<button
 			type="button"
 			onclick={() => (filterStatus = 'canceled')}
-			class="px-4 py-2 rounded-xl text-xs font-semibold transition-all {filterStatus === 'canceled'
+			class="px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all {filterStatus === 'canceled'
 				? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
 				: 'bg-white/5 text-zinc-400 hover:text-white border border-white/10'}"
 		>
@@ -168,7 +168,7 @@
 		<button
 			type="button"
 			onclick={() => (filterStatus = 'all')}
-			class="px-4 py-2 rounded-xl text-xs font-semibold transition-all {filterStatus === 'all'
+			class="px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-all {filterStatus === 'all'
 				? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.4)]'
 				: 'bg-white/5 text-zinc-400 hover:text-white border border-white/10'}"
 		>
@@ -239,13 +239,13 @@
 					</div>
 
 					<!-- Actions -->
-					<div class="flex flex-wrap lg:flex-col items-end gap-2 shrink-0">
+					<div class="flex flex-col sm:flex-row lg:flex-col items-stretch sm:items-center lg:items-end gap-2.5 w-full lg:w-auto shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-white/10">
 						{#if booking.meeting_url && booking.status === 'confirmed'}
 							<a
 								href={booking.meeting_url}
 								target="_blank"
 								rel="noreferrer"
-								class="btn-electric px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-[0_0_16px_rgba(37,99,235,0.4)]"
+								class="w-full sm:w-auto btn-electric px-5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-[0_0_16px_rgba(37,99,235,0.4)] min-h-[42px]"
 							>
 								<span>📹 Join Google Meet</span>
 								<span>↗</span>
@@ -255,7 +255,7 @@
 						<button
 							type="button"
 							onclick={() => (activeIntakeBooking = booking)}
-							class="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10 transition-all"
+							class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10 transition-all flex items-center justify-center min-h-[42px]"
 						>
 							View Intake Answers
 						</button>
@@ -264,7 +264,7 @@
 							<button
 								type="button"
 								onclick={() => openCancelModal(booking.id)}
-								class="px-4 py-2 rounded-xl text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all"
+								class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all flex items-center justify-center min-h-[42px]"
 							>
 								Cancel Session
 							</button>

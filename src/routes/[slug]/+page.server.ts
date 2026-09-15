@@ -8,20 +8,76 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, platform, url }) => {
 	const env = platform?.env;
-	if (!env) {
-		throw error(500, 'Platform env not available');
+	const db = env?.DB;
+
+	if (!db) {
+		return {
+			slug: params.slug,
+			eventType: {
+				id: 'service_30min',
+				slug: params.slug || 'consultation',
+				name: 'Strategy & Architecture Consultation',
+				duration: 30,
+				durations: [30, 60],
+				description: 'High-impact strategic evaluation of your technical architecture and software roadmap.',
+				category: 'Decide',
+				is_active: 1,
+				is_free_only: true,
+				price_inr: 0,
+				cover_image: null,
+				invite_calendar: 'google'
+			},
+			user: {
+				name: 'Neubofy™',
+				profileImage: 'https://neubofy.in/neubofylogo.png',
+				brandColor: '#3b82f6',
+				timeFormat: '12h'
+			},
+			host: {
+				id: 'expert_lead',
+				name: 'Neubofy Lead Specialist',
+				roleTitle: 'Technology & AI Solutions Lead',
+				profileImage: 'https://neubofy.in/neubofylogo.png',
+				bio: 'Translating business problems into software architecture, cloud scalability, and verified delivery.'
+			},
+			assignedExperts: [{
+				id: 'expert_lead',
+				name: 'Neubofy Lead Specialist',
+				email: 'meet@neubofy.in',
+				slug: 'specialist',
+				role_title: 'Technology & AI Solutions Lead',
+				profile_image: 'https://neubofy.in/neubofylogo.png',
+				bio: 'Translating business problems into software architecture, cloud scalability, and verified delivery.',
+				session_pricing: [
+					{ duration: 30, price: 999, label: '30 Min Strategy Consultation' },
+					{ duration: 60, price: 1999, label: '60 Min Deep Dive' }
+				]
+			}],
+			defaultExpertId: 'expert_lead'
+		};
 	}
 
-	const db = env.DB;
-
 	try {
-		const organization = await db
+		let organization = await db
 			.prepare('SELECT id, slug, name, profile_image, brand_color, contact_email FROM organizations ORDER BY created_at LIMIT 1')
 			.first<{ id: string; slug: string; name: string; profile_image: string | null; brand_color: string | null; contact_email: string | null }>();
 
-		if (!organization) throw error(404, 'Organization not found');
+		if (!organization) {
+			organization = {
+				id: 'org_neubofy_main',
+				slug: 'neubofy',
+				name: 'Neubofy™',
+				profile_image: 'https://neubofy.in/neubofylogo.png',
+				brand_color: '#3b82f6',
+				contact_email: 'contact@neubofy.in'
+			};
+		}
 
 		let eventType: any = null;
+		let assignedExperts: any[] = [];
+		let expertUser: any = null;
+
+		// 1. Try finding consultation service by slug
 		try {
 			eventType = await db
 				.prepare(
@@ -40,38 +96,116 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 				.bind(organization.id, params.slug)
 				.first();
 		} catch (err) {
-			console.error('Failed to query eventType in [slug]:', err);
+			console.warn('Failed to query eventType by slug:', err);
 		}
 
-		if (!eventType) throw error(404, 'Event type not found or inactive');
+		// 2. If not an event type, check if params.slug is an EXPERT USER slug
+		if (!eventType) {
+			try {
+				expertUser = await db
+					.prepare(
+						`SELECT id, name, email, slug, profile_image, role_title, bio, brand_color,
+						        timezone, session_pricing, settings, outlook_refresh_token
+						 FROM users
+						 WHERE slug = ? AND is_active = 1 AND COALESCE(is_deleted, 0) = 0`
+					)
+					.bind(params.slug)
+					.first<any>();
 
-		// Fetch all assigned active specialists for this consultation service (deterministic order)
-		let assignedExperts: any[] = [];
-		try {
-			const membersResult = await db
-				.prepare(
-					`SELECT u.id, u.name, u.email, u.slug, u.profile_image, u.role_title, u.bio,
-					        u.session_pricing, u.brand_color, u.timezone
-					 FROM event_type_members etm
-					 JOIN users u ON u.id = etm.user_id
-					 WHERE etm.event_type_id = ? AND etm.is_active = 1
-					 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC`
-				)
-				.bind(eventType.id, eventType.host_user_id || '')
-				.all();
+				if (expertUser) {
+					// Find assigned service or default service for this expert
+					const service = await db
+						.prepare(
+							`SELECT et.id, et.slug, et.name, et.duration_minutes as duration, et.durations_json,
+							        et.description, et.is_active, et.cover_image, et.invite_calendar,
+							        et.is_free_only, et.price_inr, et.category
+							 FROM event_types et
+							 JOIN event_type_members etm ON etm.event_type_id = et.id
+							 WHERE etm.user_id = ? AND et.is_active = 1 AND COALESCE(et.is_deleted, 0) = 0
+							 ORDER BY et.created_at ASC
+							 LIMIT 1`
+						)
+						.bind(expertUser.id)
+						.first<any>();
 
-			assignedExperts = ((membersResult.results as any[]) || []).map((exp) => {
-				let parsedPricing = [];
-				try {
-					parsedPricing = exp.session_pricing ? JSON.parse(exp.session_pricing) : [];
-				} catch {}
-				return {
-					...exp,
-					session_pricing: parsedPricing
-				};
-			});
-		} catch (errMembers) {
-			console.warn('event_type_members query bypassed or failed:', errMembers);
+					if (service) {
+						eventType = {
+							...service,
+							host_user_id: expertUser.id,
+							host_name: expertUser.name,
+							host_email: expertUser.email,
+							host_settings: expertUser.settings,
+							outlook_refresh_token: expertUser.outlook_refresh_token
+						};
+					} else {
+						// Fallback to first active event type in org
+						const firstEvent = await db
+							.prepare(
+								`SELECT id, slug, name, duration_minutes as duration, durations_json,
+								        description, is_active, cover_image, invite_calendar,
+								        et.is_free_only, et.price_inr, et.category
+								 FROM event_types et
+								 WHERE is_active = 1 AND COALESCE(is_deleted, 0) = 0
+								 ORDER BY created_at ASC
+								 LIMIT 1`
+							)
+							.first<any>();
+
+						if (firstEvent) {
+							eventType = {
+								...firstEvent,
+								host_user_id: expertUser.id,
+								host_name: expertUser.name,
+								host_email: expertUser.email,
+								host_settings: expertUser.settings,
+								outlook_refresh_token: expertUser.outlook_refresh_token
+							};
+						}
+					}
+
+					if (eventType) {
+						let parsedPricing = [];
+						try {
+							parsedPricing = expertUser.session_pricing ? JSON.parse(expertUser.session_pricing) : [];
+						} catch {}
+						assignedExperts = [{ ...expertUser, session_pricing: parsedPricing }];
+					}
+				}
+			} catch (errExpert) {
+				console.warn('Failed to query expertUser by slug:', errExpert);
+			}
+		}
+
+		if (!eventType) throw error(404, 'Consultation service or specialist not found');
+
+		// If not already set by expert user slug lookup, fetch assigned active specialists
+		if (assignedExperts.length === 0) {
+			try {
+				const membersResult = await db
+					.prepare(
+						`SELECT u.id, u.name, u.email, u.slug, u.profile_image, u.role_title, u.bio,
+						        u.session_pricing, u.brand_color, u.timezone
+						 FROM event_type_members etm
+						 JOIN users u ON u.id = etm.user_id
+						 WHERE etm.event_type_id = ? AND etm.is_active = 1
+						 ORDER BY CASE WHEN u.id = ? THEN 0 ELSE 1 END, etm.created_at ASC, u.name ASC`
+					)
+					.bind(eventType.id, eventType.host_user_id || '')
+					.all();
+
+				assignedExperts = ((membersResult.results as any[]) || []).map((exp) => {
+					let parsedPricing = [];
+					try {
+						parsedPricing = exp.session_pricing ? JSON.parse(exp.session_pricing) : [];
+					} catch {}
+					return {
+						...exp,
+						session_pricing: parsedPricing
+					};
+				});
+			} catch (errMembers) {
+				console.warn('event_type_members query bypassed or failed:', errMembers);
+			}
 		}
 
 		// Fallback to legacy creator user if no junction entries exist
@@ -126,7 +260,7 @@ export const load: PageServerLoad = async ({ params, platform, url }) => {
 
 		// Check if URL specifies an expert: ?expert=...
 		const requestedExpertId = url.searchParams.get('expert');
-		let defaultExpert = assignedExperts[0] || null;
+		let defaultExpert = expertUser || assignedExperts[0] || null;
 		if (requestedExpertId) {
 			const found = assignedExperts.find((e) => e.id === requestedExpertId || e.slug === requestedExpertId);
 			if (found) defaultExpert = found;

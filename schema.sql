@@ -416,7 +416,46 @@ INSERT INTO event_types (
     1
 );
 
--- 3. Default Welcome VIP Coupon (100% Complimentary Waiver)
+-- 3. Default Lead Expert & Owner Account
+INSERT INTO users (
+    id, email, name, slug, profile_image, brand_color, timezone,
+    contact_email, role_title, bio, session_pricing, is_free_consultation, is_active
+) VALUES (
+    'user_neubofy_lead',
+    'contact@neubofy.in',
+    'Pawan Kumar',
+    'pawankumar',
+    'https://neubofy.in/neubofylogo.png',
+    '#3b82f6',
+    'Asia/Kolkata',
+    'meet@neubofy.in',
+    'Technology & AI Solutions Lead',
+    'Technology specialist at Neubofy. Translating business problems into software architecture, cloud scalability, and independently verified execution.',
+    '[{"duration": 30, "price": 999, "label": "30 Min Strategy Consultation"}, {"duration": 60, "price": 1999, "label": "60 Min Deep Dive"}]',
+    1,
+    1
+);
+
+INSERT INTO organization_members (
+    id, organization_id, user_id, role, is_active
+) VALUES (
+    'mem_neubofy_owner',
+    'org_neubofy_main',
+    'user_neubofy_lead',
+    'owner',
+    1
+);
+
+INSERT INTO event_type_members (
+    id, event_type_id, user_id, is_active
+) VALUES 
+('etm_30min_lead', 'service_30min', 'user_neubofy_lead', 1),
+('etm_60min_lead', 'service_60min', 'user_neubofy_lead', 1),
+('etm_audit_lead', 'service_audit', 'user_neubofy_lead', 1);
+
+UPDATE event_types SET user_id = 'user_neubofy_lead' WHERE user_id IS NULL;
+
+-- 4. Default Welcome VIP Coupon (100% Complimentary Waiver)
 INSERT INTO coupons (
     id, organization_id, code, discount_type, discount_value,
     max_uses, used_count, is_active, created_at

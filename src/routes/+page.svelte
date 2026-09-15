@@ -846,13 +846,13 @@
 									</div>
 
 									<!-- Session Durations & Free Badge -->
-									<div class="w-full sm:w-auto flex flex-col items-end gap-3 shrink-0">
-										<div class="flex flex-wrap gap-2">
+									<div class="w-full sm:w-auto flex flex-col items-stretch sm:items-end gap-3 shrink-0 pt-4 sm:pt-0 border-t sm:border-t-0 border-white/10">
+										<div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap w-full sm:w-auto">
 											{#each expert.session_pricing && expert.session_pricing.length > 0 ? expert.session_pricing : (selectedEvent.durations || [30]).map((d: any) => ({ duration: d, price: 0 })) as tier}
 												<button
 													type="button"
 													onclick={() => handleSelectExpert(expert, tier.duration)}
-													class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col {selectedExpert?.id === expert.id && selectedDuration === tier.duration
+													class="w-full sm:w-auto px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col min-h-[54px] justify-center {selectedExpert?.id === expert.id && selectedDuration === tier.duration
 														? 'bg-blue-600/30 border-blue-500 text-white shadow-[0_0_16px_rgba(59,130,246,0.3)]'
 														: 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'}"
 												>
@@ -868,7 +868,7 @@
 										<button
 											type="button"
 											onclick={() => handleSelectExpert(expert, selectedDuration)}
-											class="w-full sm:w-auto btn-electric px-5 py-2.5 rounded-xl text-xs font-bold"
+											class="w-full sm:w-auto btn-electric px-5 py-3 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center min-h-[44px]"
 										>
 											Check Schedule & Book →
 										</button>
@@ -1143,21 +1143,21 @@
 							Email Address (Strict Verification) <span class="text-red-400">*</span>
 						</label>
 
-						<div class="flex flex-col sm:flex-row gap-2">
+						<div class="flex flex-col sm:flex-row gap-2.5">
 							<input
 								id="attendee-email"
 								type="email"
 								disabled={emailVerified}
 								bind:value={attendeeEmail}
 								placeholder="you@company.com"
-								class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none disabled:opacity-60"
+								class="w-full sm:flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none disabled:opacity-60 min-h-[44px]"
 							/>
 							{#if !emailVerified}
 								<button
 									type="button"
 									disabled={otpSending || resendCountdown > 0}
 									onclick={handleSendOtp}
-									class="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-all disabled:opacity-50 shrink-0"
+									class="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-all disabled:opacity-50 shrink-0 min-h-[44px] flex items-center justify-center"
 								>
 									{otpSending
 										? 'Sending...'
@@ -1168,7 +1168,7 @@
 												: 'Send OTP Code'}
 								</button>
 							{:else}
-								<div class="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
+								<div class="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1.5 shrink-0 min-h-[44px]">
 									✓ Verified
 								</div>
 							{/if}
@@ -1176,19 +1176,19 @@
 
 						<!-- OTP Input Box -->
 						{#if otpSent && !emailVerified}
-							<div class="pt-2 flex flex-col sm:flex-row gap-2">
+							<div class="pt-2 flex flex-col sm:flex-row gap-2.5">
 								<input
 									type="text"
 									maxLength={6}
 									bind:value={otpCode}
 									placeholder="Enter 6-digit OTP code"
-									class="w-full sm:w-48 px-4 py-2.5 text-center font-mono text-base tracking-widest rounded-xl bg-white/10 border border-blue-500/40 text-white outline-none"
+									class="w-full sm:w-48 px-4 py-2.5 text-center font-mono text-base tracking-widest rounded-xl bg-white/10 border border-blue-500/40 text-white outline-none min-h-[44px]"
 								/>
 								<button
 									type="button"
 									disabled={otpVerifying || otpCode.trim().length !== 6}
 									onclick={handleVerifyOtp}
-									class="btn-electric px-6 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50"
+									class="w-full sm:w-auto btn-electric px-6 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50 min-h-[44px] flex items-center justify-center"
 								>
 									{otpVerifying ? 'Verifying...' : 'Verify OTP'}
 								</button>

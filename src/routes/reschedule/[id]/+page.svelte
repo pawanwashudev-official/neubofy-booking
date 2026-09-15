@@ -321,7 +321,7 @@
 						<div class="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-sm">
 							<p class="font-medium text-red-300">{formatOriginalDateTime(data.booking.startTime)}</p>
 							<p class="text-red-400 text-xs mt-0.5">{data.booking.attendeeName}</p>
-							<p class="text-red-400/80 text-xs">{data.booking.attendeeEmail}</p>
+							<p class="text-red-400/80 text-xs">{data.booking.maskedEmail}</p>
 						</div>
 					</div>
 

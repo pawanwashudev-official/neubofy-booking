@@ -237,7 +237,7 @@
 				{/if}
 			</div>
 
-			<div class="flex gap-2">
+			<div class="flex flex-col sm:flex-row gap-2.5">
 				<input
 					type="email"
 					id="email"
@@ -246,7 +246,7 @@
 					disabled={isVerified}
 					required
 					placeholder="you@company.com"
-					class="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-60 transition-all"
+					class="w-full sm:flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-60 transition-all min-h-[44px]"
 				/>
 				{#if !isVerified}
 					{#if !otpSent}
@@ -254,7 +254,7 @@
 							type="button"
 							onclick={handleSendOtp}
 							disabled={sendingOtp || !bookingForm.email?.includes('@')}
-							class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0"
+							class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0 min-h-[44px] flex items-center justify-center"
 						>
 							{sendingOtp ? 'Sending...' : 'Send OTP'}
 						</button>
@@ -262,7 +262,7 @@
 						<button
 							type="button"
 							onclick={() => { otpSent = false; otpCode = ''; }}
-							class="px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-all shrink-0"
+							class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-all shrink-0 min-h-[44px] flex items-center justify-center"
 						>
 							Change
 						</button>
@@ -271,7 +271,7 @@
 					<button
 						type="button"
 						onclick={() => { isVerified = false; bookingForm.verificationToken = ''; otpSent = false; }}
-						class="px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-400 hover:text-white transition-all shrink-0"
+						class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-400 hover:text-white transition-all shrink-0 min-h-[44px] flex items-center justify-center"
 					>
 						Edit
 					</button>
@@ -280,7 +280,7 @@
 
 			<!-- OTP input box if sent and not yet verified -->
 			{#if otpSent && !isVerified}
-				<div class="mt-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 space-y-2 animate-fade-in">
+				<div class="mt-2.5 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 space-y-2.5 animate-fade-in">
 					<div class="flex items-center justify-between text-[11px] text-blue-300">
 						<span>Enter 6-digit code sent to your email:</span>
 						<button
@@ -292,19 +292,19 @@
 							Resend Code
 						</button>
 					</div>
-					<div class="flex gap-2">
+					<div class="flex flex-col sm:flex-row gap-2">
 						<input
 							type="text"
 							maxlength="6"
 							bind:value={otpCode}
 							placeholder="123456"
-							class="flex-1 px-3 py-2 rounded-lg bg-black/40 border border-blue-500/50 text-center font-mono text-sm tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-blue-400"
+							class="w-full sm:flex-1 px-3 py-2 rounded-lg bg-black/40 border border-blue-500/50 text-center font-mono text-sm tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-blue-400 min-h-[44px]"
 						/>
 						<button
 							type="button"
 							onclick={handleVerifyOtp}
 							disabled={verifyingOtp || otpCode.trim().length !== 6}
-							class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0"
+							class="w-full sm:w-auto px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white transition-all shrink-0 min-h-[44px] flex items-center justify-center"
 						>
 							{verifyingOtp ? 'Verifying...' : 'Verify'}
 						</button>
@@ -365,19 +365,19 @@
 			<label for="coupon" class="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
 				Have a Coupon or Referral Code?
 			</label>
-			<div class="flex gap-2">
+			<div class="flex flex-col sm:flex-row gap-2">
 				<input
 					type="text"
 					id="coupon"
 					bind:value={bookingForm.couponCode}
 					placeholder="e.g. VIP100, FOUNDER"
-					class="flex-1 px-3.5 py-2 rounded-xl bg-white/5 border border-white/15 text-xs font-mono uppercase text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all"
+					class="w-full sm:flex-1 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/15 text-xs font-mono uppercase text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-all min-h-[44px]"
 				/>
 				<button
 					type="button"
 					onclick={handleApplyCoupon}
 					disabled={couponValidating || !bookingForm.couponCode?.trim()}
-					class="px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-white border border-white/10 disabled:opacity-40 transition-all"
+					class="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-white border border-white/10 disabled:opacity-40 transition-all min-h-[44px] flex items-center justify-center shrink-0"
 				>
 					{couponValidating ? 'Checking...' : 'Apply'}
 				</button>
