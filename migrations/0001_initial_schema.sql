@@ -217,7 +217,6 @@ CREATE TABLE bookings (
     coupon_code TEXT, -- Applied promo/waiver coupon
     is_paid BOOLEAN DEFAULT 1, -- 1 for complimentary or paid bookings
     email_verified BOOLEAN DEFAULT 1,
-    client_firebase_uid TEXT,
     google_event_id TEXT,
     outlook_event_id TEXT,
     meeting_url TEXT,

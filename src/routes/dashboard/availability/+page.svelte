@@ -22,7 +22,7 @@
 			return {
 				day: day.id,
 				name: day.name,
-				enabled: data.rules?.length ? existingRules.length > 0 : (day.id >= 1 && day.id <= 5), // default Mon-Fri only if no rules exist
+				enabled: data.has_configured_availability ? existingRules.length > 0 : (day.id >= 1 && day.id <= 5), // default Mon-Fri only if no rules exist
 				startTime: existingRules[0]?.start_time || '10:00',
 				endTime: existingRules[0]?.end_time || '18:00'
 			};

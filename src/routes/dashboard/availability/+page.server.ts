@@ -36,13 +36,14 @@ export const load: PageServerLoad = async (event) => {
 
 	// Get user's timezone
 	const user = await db
-		.prepare('SELECT timezone FROM users WHERE id = ?')
+		.prepare('SELECT timezone, has_configured_availability FROM users WHERE id = ?')
 		.bind(userId)
-		.first<{ timezone: string | null }>();
+		.first<{ timezone: string | null; has_configured_availability: number | null }>();
 
 	return {
 		rules: rules.results,
-		timezone: user?.timezone || 'UTC'
+		timezone: user?.timezone || 'UTC',
+		has_configured_availability: !!user?.has_configured_availability
 	};
 };
 
@@ -71,6 +72,8 @@ export const actions: Actions = {
 			const rules = JSON.parse(rulesJson);
 
 			// Update user's timezone if provided
+			await db.prepare('UPDATE users SET has_configured_availability = 1 WHERE id = ?').bind(userId).run();
+
 			if (timezone && typeof timezone === 'string') {
 				await db
 					.prepare('UPDATE users SET timezone = ? WHERE id = ?')

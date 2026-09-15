@@ -77,7 +77,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		}
 
 		try {
-			let userQuery = 'SELECT id, slug, timezone, settings FROM users';
+			let userQuery = 'SELECT id, slug, timezone, settings, has_configured_availability FROM users';
 			if (targetUserId) {
 				userQuery += ' WHERE id = ? OR slug = ?';
 			} else {
@@ -136,7 +136,9 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		// Fallback business hours (Mon-Sat 10:00 - 18:00) if expert has not yet set custom rules
 		let activeRules = availabilityRules.results || [];
 		if (activeRules.length === 0 && dayOfWeek !== 0) {
+			if (!user.has_configured_availability) {
 			activeRules = [{ start_time: '10:00', end_time: '18:00' }];
+		}
 		}
 
 		if (activeRules.length === 0) {

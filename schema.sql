@@ -65,6 +65,7 @@ CREATE TABLE users (
     last_sync DATETIME,
     settings JSON DEFAULT '{}',
     last_login_at DATETIME,
+    has_configured_availability BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
